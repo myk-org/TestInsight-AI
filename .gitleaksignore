@@ -1,0 +1,11 @@
+# Gitleaks ignore file - using fingerprints from gitleaks output
+backend/services/git_client.py:github-pat:97
+backend/tests/services/test_security_utils.py:gcp-api-key:219
+backend/tests/services/test_service_config.py:generic-api-key:308
+backend/tests/services/test_service_config.py:generic-api-key:312
+backend/tests/services/test_settings_service.py:generic-api-key:197
+backend/tests/services/test_settings_service.py:generic-api-key:210
+backend/tests/services/test_settings_service.py:generic-api-key:300
+backend/tests/services/test_settings_service.py:generic-api-key:365
+backend/tests/api/test_endpoints.py:generic-api-key:436
+backend/tests/api/test_endpoints.py:generic-api-key:482

@@ -1,0 +1,28 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# User
+.env
+
+# Tests
+.coverage
+.tests_coverage
+
+# AI
+.cursor/
+CLAUDE.md
+.agent-os/
+.cursorrules
+.claude/
+web-bundles/
+
+# App
+data/
