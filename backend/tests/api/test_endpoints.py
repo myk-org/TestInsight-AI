@@ -16,10 +16,12 @@ from backend.tests.conftest import (
     FAKE_GEMINI_API_KEY,
     FAKE_GITHUB_REPO,
     FAKE_GITHUB_TOKEN,
+    FAKE_INVALID_API_KEY,
     FAKE_JENKINS_TOKEN,
     FAKE_JENKINS_URL,
     FAKE_JENKINS_USERNAME,
     FAKE_REPO_PATH,
+    FAKE_SHORT_COMMIT,
 )
 
 
@@ -238,18 +240,18 @@ class TestGitEndpoints:
 
         response = client.post(
             "/api/v1/git/clone",
-            data={"repo_url": FAKE_GITHUB_REPO, "commit": "abc123"},
+            data={"repo_url": FAKE_GITHUB_REPO, "commit": FAKE_SHORT_COMMIT},
         )
 
         assert response.status_code == 200
         data = response.json()
-        assert data["commit_hash"] == "abc123"
+        assert data["commit_hash"] == FAKE_SHORT_COMMIT
 
     def test_clone_repository_branch_and_commit(self, client):
         """Test repository cloning with both branch and commit (should fail)."""
         response = client.post(
             "/api/v1/git/clone",
-            data={"repo_url": FAKE_GITHUB_REPO, "branch": "main", "commit": "abc123"},
+            data={"repo_url": FAKE_GITHUB_REPO, "branch": "main", "commit": FAKE_SHORT_COMMIT},
         )
 
         assert response.status_code == 500  # Due to generic exception handling
@@ -428,7 +430,7 @@ class TestAIModelsEndpoints:
 
         response = client.post(
             "/api/v1/ai/models",
-            json={"api_key": "invalid_key_12345678901234567890"},  # pragma: allowlist secret
+            json={"api_key": FAKE_INVALID_API_KEY},
         )
 
         assert response.status_code == 401
@@ -479,7 +481,7 @@ class TestAIModelsEndpoints:
 
         response = client.post(
             "/api/v1/ai/models/validate-key",
-            json={"api_key": "invalid_key_12345678901234567890"},  # pragma: allowlist secret
+            json={"api_key": FAKE_INVALID_API_KEY},
         )
 
         assert response.status_code == 401

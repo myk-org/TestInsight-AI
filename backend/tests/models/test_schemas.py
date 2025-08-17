@@ -14,6 +14,11 @@ from backend.models.schemas import (
     TestStatus,
     TestConnectionWithParamsRequest,
 )
+from backend.tests.conftest import (
+    FAKE_GEMINI_API_KEY,
+    FAKE_GITHUB_TOKEN,
+    FAKE_JENKINS_TOKEN,
+)
 
 
 class TestSeverityEnum:
@@ -162,8 +167,8 @@ class TestGeminiModelsRequest:
 
     def test_valid_gemini_models_request(self):
         """Test valid GeminiModelsRequest creation."""
-        request = GeminiModelsRequest(api_key="AIzaSyFakeKeyExample123456789")  # pragma: allowlist secret
-        assert request.api_key == "AIzaSyFakeKeyExample123456789"  # pragma: allowlist secret
+        request = GeminiModelsRequest(api_key=FAKE_GEMINI_API_KEY)
+        assert request.api_key == FAKE_GEMINI_API_KEY
 
 
 class TestGeminiModelsResponse:
@@ -242,7 +247,7 @@ class TestTestConnectionWithParamsRequest:
             config={
                 "url": "https://fake-jenkins.example.com",
                 "username": "testuser",
-                "api_token": "fake_token_123",  # pragma: allowlist secret
+                "api_token": FAKE_JENKINS_TOKEN,
                 "verify_ssl": False,
             },
         )
@@ -251,20 +256,18 @@ class TestTestConnectionWithParamsRequest:
 
     def test_github_connection_request(self):
         """Test GitHub connection test request."""
-        request = TestConnectionWithParamsRequest(
-            service="github", config={"token": "fake_github_token_xyz"}
-        )  # pragma: allowlist secret
+        request = TestConnectionWithParamsRequest(service="github", config={"token": FAKE_GITHUB_TOKEN})
         assert request.service == "github"
-        assert request.config["token"] == "fake_github_token_xyz"  # pragma: allowlist secret
+        assert request.config["token"] == FAKE_GITHUB_TOKEN
 
     def test_ai_connection_request(self):
         """Test AI connection test request."""
         request = TestConnectionWithParamsRequest(
             service="ai",
             config={
-                "gemini_api_key": "AIzaSyFakeKeyExample123456789",  # pragma: allowlist secret
+                "gemini_api_key": FAKE_GEMINI_API_KEY,
                 "gemini_model": "gemini-1.5-pro",
             },
         )
         assert request.service == "ai"
-        assert request.config["gemini_api_key"] == "AIzaSyFakeKeyExample123456789"  # pragma: allowlist secret
+        assert request.config["gemini_api_key"] == FAKE_GEMINI_API_KEY

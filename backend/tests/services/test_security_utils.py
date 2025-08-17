@@ -12,6 +12,14 @@ from backend.services.security_utils import (
     get_encryption,
     secure_compare,
 )
+from backend.tests.conftest import (
+    FAKE_DEFAULT_PASSWORD,
+    FAKE_ENV_PASSWORD,
+    FAKE_PADDED_TOKEN,
+    FAKE_SENSITIVE_TOKEN,
+    FAKE_SHORT_TOKEN,
+    FAKE_TEST_PASSWORD,
+)
 
 
 class TestInputSanitizer:
@@ -63,7 +71,7 @@ class TestInputSanitizer:
         """Test sanitizing valid tokens."""
         sanitizer = InputSanitizer()
 
-        token = "fake_token_123456"
+        token = FAKE_SHORT_TOKEN
         result = sanitizer.sanitize_token(token)
         assert result == token
 
@@ -76,7 +84,7 @@ class TestInputSanitizer:
     def test_sanitize_token_strips_whitespace(self):
         """Test token sanitization strips whitespace."""
         sanitizer = InputSanitizer()
-        token = "  fake_token_123  "
+        token = FAKE_PADDED_TOKEN
         result = sanitizer.sanitize_token(token)
         assert result == "fake_token_123"  # pragma: allowlist secret
 
@@ -250,26 +258,26 @@ class TestSettingsEncryption:
 
     def test_init_with_password(self):
         """Test initializing encryption with password."""
-        encryption = SettingsEncryption(password="test_password")  # pragma: allowlist secret
-        assert encryption.password == "test_password"  # pragma: allowlist secret
+        encryption = SettingsEncryption(password=FAKE_TEST_PASSWORD)
+        assert encryption.password == FAKE_TEST_PASSWORD
 
-    @patch.dict("os.environ", {"SETTINGS_ENCRYPTION_KEY": "env_password"})  # pragma: allowlist secret
+    @patch.dict("os.environ", {"SETTINGS_ENCRYPTION_KEY": FAKE_ENV_PASSWORD})
     def test_init_with_env_password(self):
         """Test initializing encryption with environment password."""
         encryption = SettingsEncryption()
-        assert encryption.password == "env_password"  # pragma: allowlist secret
+        assert encryption.password == FAKE_ENV_PASSWORD
 
     def test_init_with_default_password(self):
         """Test initializing encryption with default password."""
         with patch.dict("os.environ", {}, clear=True):
             encryption = SettingsEncryption()
-            assert encryption.password == "default-key-change-me"  # pragma: allowlist secret
+            assert encryption.password == FAKE_DEFAULT_PASSWORD
 
     def test_encrypt_decrypt_round_trip(self):
         """Test encryption and decryption round trip."""
-        encryption = SettingsEncryption(password="test_password")  # pragma: allowlist secret
+        encryption = SettingsEncryption(password=FAKE_TEST_PASSWORD)
 
-        original_data = "fake_sensitive_token_123"
+        original_data = FAKE_SENSITIVE_TOKEN
         encrypted = encryption.encrypt(original_data)
         decrypted = encryption.decrypt(encrypted)
 
@@ -278,21 +286,21 @@ class TestSettingsEncryption:
 
     def test_encrypt_empty_data(self):
         """Test encrypting empty data."""
-        encryption = SettingsEncryption(password="test_password")  # pragma: allowlist secret
+        encryption = SettingsEncryption(password=FAKE_TEST_PASSWORD)
 
         assert encryption.encrypt("") == ""
         assert encryption.encrypt(None) is None
 
     def test_decrypt_empty_data(self):
         """Test decrypting empty data."""
-        encryption = SettingsEncryption(password="test_password")  # pragma: allowlist secret
+        encryption = SettingsEncryption(password=FAKE_TEST_PASSWORD)
 
         assert encryption.decrypt("") == ""
         assert encryption.decrypt(None) is None
 
     def test_decrypt_invalid_data(self):
         """Test decrypting invalid encrypted data."""
-        encryption = SettingsEncryption(password="test_password")  # pragma: allowlist secret
+        encryption = SettingsEncryption(password=FAKE_TEST_PASSWORD)
 
         # Should return original data if decryption fails (backwards compatibility)
         invalid_data = "not_encrypted_data"
@@ -301,7 +309,7 @@ class TestSettingsEncryption:
 
     def test_is_encrypted_valid(self):
         """Test detecting encrypted data."""
-        encryption = SettingsEncryption(password="test_password")  # pragma: allowlist secret
+        encryption = SettingsEncryption(password=FAKE_TEST_PASSWORD)
 
         original_data = "test_data"
         encrypted = encryption.encrypt(original_data)
@@ -311,7 +319,7 @@ class TestSettingsEncryption:
 
     def test_is_encrypted_empty(self):
         """Test detecting encryption on empty data."""
-        encryption = SettingsEncryption(password="test_password")  # pragma: allowlist secret
+        encryption = SettingsEncryption(password=FAKE_TEST_PASSWORD)
 
         assert encryption.is_encrypted("") is False
         assert encryption.is_encrypted(None) is False

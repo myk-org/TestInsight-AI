@@ -6,6 +6,10 @@ import pytest
 from backend.services.gemini_api import GeminiClient
 from backend.models.schemas import GeminiModelsResponse
 from backend.services.security_utils import SettingsValidator
+from backend.tests.conftest import (
+    FAKE_GEMINI_API_KEY,
+    FAKE_INVALID_FORMAT_KEY,
+)
 
 
 class TestGeminiClient:
@@ -19,11 +23,11 @@ class TestGeminiClient:
         mock_client_instance = Mock()
         mock_genai_client.return_value = mock_client_instance
 
-        client = GeminiClient(api_key="AIzaSyFakeKeyExample123456789")  # pragma: allowlist secret
+        client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
 
-        assert client.api_key == "AIzaSyFakeKeyExample123456789"  # pragma: allowlist secret
+        assert client.api_key == FAKE_GEMINI_API_KEY
         assert client.client == mock_client_instance
-        mock_genai_client.assert_called_once_with(api_key="AIzaSyFakeKeyExample123456789")  # pragma: allowlist secret
+        mock_genai_client.assert_called_once_with(api_key=FAKE_GEMINI_API_KEY)
         mock_validate.assert_called_once()
 
     @patch("backend.services.gemini_api.genai.Client")
@@ -35,7 +39,7 @@ class TestGeminiClient:
         mock_genai_client.return_value = mock_client_instance
 
         with pytest.raises(ValueError, match="Invalid API key"):
-            GeminiClient(api_key="AIzaSyFakeKeyExample123456789")  # pragma: allowlist secret
+            GeminiClient(api_key=FAKE_GEMINI_API_KEY)
 
     @patch("backend.services.gemini_api.genai.Client")
     def test_list_models_success(self, mock_genai_client):
@@ -50,7 +54,7 @@ class TestGeminiClient:
         mock_client_instance.models.list.return_value = fake_models
 
         with patch.object(GeminiClient, "validate_api_key"):
-            client = GeminiClient(api_key="AIzaSyFakeKeyExample123456789")  # pragma: allowlist secret
+            client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
             result = client._list_models()
 
             assert result == fake_models
@@ -64,7 +68,7 @@ class TestGeminiClient:
         mock_client_instance.models.list.side_effect = Exception("API Error")
 
         with patch.object(GeminiClient, "validate_api_key"):
-            client = GeminiClient(api_key="AIzaSyFakeKeyExample123456789")  # pragma: allowlist secret
+            client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
 
             with pytest.raises(Exception, match="API Error"):
                 client._list_models()
@@ -89,7 +93,7 @@ class TestGeminiClient:
 
         with patch.object(GeminiClient, "_list_models"):
             client = GeminiClient.__new__(GeminiClient)  # Skip __init__
-            client.api_key = "invalid_format_key"  # pragma: allowlist secret
+            client.api_key = FAKE_INVALID_FORMAT_KEY
             client.client = mock_client_instance
 
             result = client.validate_api_key()
@@ -105,7 +109,7 @@ class TestGeminiClient:
 
         with patch.object(GeminiClient, "_list_models", return_value=[Mock()]):
             client = GeminiClient.__new__(GeminiClient)  # Skip __init__
-            client.api_key = "AIzaSyFakeKeyExample123456789"  # pragma: allowlist secret
+            client.api_key = FAKE_GEMINI_API_KEY
             client.client = mock_client_instance
 
             result = client.validate_api_key()
@@ -121,7 +125,7 @@ class TestGeminiClient:
 
         with patch.object(GeminiClient, "_list_models", return_value=None):
             client = GeminiClient.__new__(GeminiClient)  # Skip __init__
-            client.api_key = "AIzaSyFakeKeyExample123456789"  # pragma: allowlist secret
+            client.api_key = FAKE_GEMINI_API_KEY
             client.client = mock_client_instance
 
             result = client.validate_api_key()
@@ -167,7 +171,7 @@ class TestGeminiClient:
             patch.object(GeminiClient, "validate_api_key"),
             patch.object(GeminiClient, "_list_models", return_value=fake_models),
         ):
-            client = GeminiClient(api_key="AIzaSyFakeKeyExample123456789")  # pragma: allowlist secret
+            client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
             result = client.get_available_models()
 
             assert isinstance(result, GeminiModelsResponse)
@@ -194,7 +198,7 @@ class TestGeminiClient:
             patch.object(GeminiClient, "validate_api_key"),
             patch.object(GeminiClient, "_list_models", return_value=fake_models),
         ):
-            client = GeminiClient(api_key="AIzaSyFakeKeyExample123456789")  # pragma: allowlist secret
+            client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
             result = client.get_available_models()
 
             assert result.total_count == 0
@@ -210,7 +214,7 @@ class TestGeminiClient:
             patch.object(GeminiClient, "validate_api_key"),
             patch.object(GeminiClient, "_list_models", return_value=[]),
         ):
-            client = GeminiClient(api_key="AIzaSyFakeKeyExample123456789")  # pragma: allowlist secret
+            client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
             result = client.get_available_models()
 
             assert result.success is True
@@ -250,7 +254,7 @@ class TestGeminiClient:
             patch.object(GeminiClient, "validate_api_key"),
             patch.object(GeminiClient, "_list_models", return_value=fake_models),
         ):
-            client = GeminiClient(api_key="AIzaSyFakeKeyExample123456789")  # pragma: allowlist secret
+            client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
             result = client.get_available_models()
 
             # Only the first model should be included
@@ -280,7 +284,7 @@ class TestGeminiClient:
             patch.object(GeminiClient, "validate_api_key"),
             patch.object(GeminiClient, "_list_models", return_value=fake_models),
         ):
-            client = GeminiClient(api_key="AIzaSyFakeKeyExample123456789")  # pragma: allowlist secret
+            client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
             result = client.get_available_models()
 
             assert result.total_count == 1
@@ -303,7 +307,7 @@ class TestGeminiClient:
         mock_client_instance.models.generate_content.return_value = mock_response
 
         with patch.object(GeminiClient, "validate_api_key"):
-            client = GeminiClient(api_key="AIzaSyFakeKeyExample123456789")  # pragma: allowlist secret
+            client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
 
             result = client.generate_content(
                 prompt="Analyze this test failure", model="gemini-1.5-pro", temperature=0.8, max_tokens=2048
@@ -333,7 +337,7 @@ class TestGeminiClient:
         mock_client_instance.models.generate_content.return_value = mock_response
 
         with patch.object(GeminiClient, "validate_api_key"):
-            client = GeminiClient(api_key="AIzaSyFakeKeyExample123456789")  # pragma: allowlist secret
+            client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
 
             result = client.generate_content("Test prompt")
 
@@ -357,7 +361,7 @@ class TestGeminiClient:
         mock_client_instance.models.generate_content.return_value = mock_response
 
         with patch.object(GeminiClient, "validate_api_key"):
-            client = GeminiClient(api_key="AIzaSyFakeKeyExample123456789")  # pragma: allowlist secret
+            client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
 
             result = client.generate_content("Test prompt")
 
@@ -372,7 +376,7 @@ class TestGeminiClient:
         mock_client_instance.models.generate_content.side_effect = Exception("API rate limit exceeded")
 
         with patch.object(GeminiClient, "validate_api_key"):
-            client = GeminiClient(api_key="AIzaSyFakeKeyExample123456789")  # pragma: allowlist secret
+            client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
 
             with pytest.raises(Exception, match="API rate limit exceeded"):
                 client.generate_content("Test prompt")
@@ -388,7 +392,7 @@ class TestGeminiClient:
         mock_client_instance.models.generate_content.return_value = mock_response
 
         with patch.object(GeminiClient, "validate_api_key"):
-            client = GeminiClient(api_key="AIzaSyFakeKeyExample123456789")  # pragma: allowlist secret
+            client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
 
             # Test with model name that already has 'models/' prefix
             client.generate_content("Test", model="models/gemini-1.5-flash")
@@ -413,12 +417,12 @@ class TestGeminiClient:
             patch.object(SettingsValidator, "validate_gemini_api_key", return_value=[]) as mock_validator,
         ):
             client = GeminiClient.__new__(GeminiClient)  # Skip __init__
-            client.api_key = "AIzaSyFakeKeyExample123456789"  # pragma: allowlist secret
+            client.api_key = FAKE_GEMINI_API_KEY
             client.client = mock_client_instance
 
             result = client.validate_api_key()
 
-            mock_validator.assert_called_once_with("AIzaSyFakeKeyExample123456789")  # pragma: allowlist secret
+            mock_validator.assert_called_once_with(FAKE_GEMINI_API_KEY)
             assert result is True
 
     @patch("backend.services.gemini_api.genai.Client")
@@ -444,7 +448,7 @@ class TestGeminiClient:
             patch.object(GeminiClient, "_list_models", return_value=fake_models),
             patch("backend.services.gemini_api.logger") as mock_logger,
         ):
-            client = GeminiClient(api_key="AIzaSyFakeKeyExample123456789")  # pragma: allowlist secret
+            client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
             client.get_available_models()
 
             # Verify logging calls were made

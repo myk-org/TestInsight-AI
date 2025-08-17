@@ -16,6 +16,12 @@ from backend.models.schemas import (
     UserPreferences,
 )
 from backend.services.security_utils import SettingsValidator
+from backend.tests.conftest import (
+    FAKE_GEMINI_API_KEY,
+    FAKE_GITHUB_TOKEN,
+    FAKE_JENKINS_TOKEN,
+    FAKE_NEW_API_KEY,
+)
 
 
 class TestSettingsService:
@@ -64,12 +70,12 @@ class TestSettingsService:
             "jenkins": {
                 "url": "https://fake-jenkins.example.com",
                 "username": "testuser",
-                "api_token": "fake_token_123",  # pragma: allowlist secret
+                "api_token": FAKE_JENKINS_TOKEN,
                 "verify_ssl": True,
             },
-            "github": {"token": "fake_github_token_xyz"},  # pragma: allowlist secret
+            "github": {"token": FAKE_GITHUB_TOKEN},
             "ai": {
-                "gemini_api_key": "AIzaSyFakeKeyExample123456789",  # pragma: allowlist secret
+                "gemini_api_key": FAKE_GEMINI_API_KEY,
                 "model": "gemini-1.5-pro",
                 "temperature": 0.8,
                 "max_tokens": 2048,
@@ -89,8 +95,8 @@ class TestSettingsService:
 
                 assert isinstance(settings, AppSettings)
                 assert settings.jenkins.url == "https://fake-jenkins.example.com"
-                assert settings.github.token == "fake_github_token_xyz"  # pragma: allowlist secret
-                assert settings.ai.gemini_api_key == "AIzaSyFakeKeyExample123456789"  # pragma: allowlist secret
+                assert settings.github.token == FAKE_GITHUB_TOKEN
+                assert settings.ai.gemini_api_key == FAKE_GEMINI_API_KEY
                 assert settings.preferences.theme == "dark"
 
     def test_get_settings_caches_result(self):
@@ -162,7 +168,7 @@ class TestSettingsService:
                         url="https://jenkins.example.com", username="user1", api_token="token1"
                     ),  # pragma: allowlist secret
                     ai=AISettings(
-                        gemini_api_key="AIzaSyNewKey123",  # pragma: allowlist secret
+                        gemini_api_key=FAKE_NEW_API_KEY,
                         gemini_model="gemini-1.5-pro",
                         temperature=0.9,  # pragma: allowlist secret
                     ),  # pragma: allowlist secret
@@ -172,7 +178,7 @@ class TestSettingsService:
                 result = service.update_settings(update)
 
                 assert result.jenkins.url == "https://jenkins.example.com"
-                assert result.ai.gemini_api_key == "AIzaSyNewKey123"  # pragma: allowlist secret
+                assert result.ai.gemini_api_key == FAKE_NEW_API_KEY
                 assert result.ai.gemini_model == "gemini-1.5-pro"
                 assert result.preferences.theme == "light"
                 assert result.preferences.auto_refresh is False

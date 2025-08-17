@@ -5,6 +5,17 @@ from unittest.mock import Mock, patch
 
 from backend.models.schemas import AppSettings, JenkinsSettings, GitHubSettings, AISettings, UserPreferences
 from backend.services.service_config import ServiceConfig
+from backend.tests.conftest import (
+    FAKE_BAD_TOKEN,
+    FAKE_CUSTOM_API_KEY,
+    FAKE_CUSTOM_TOKEN,
+    FAKE_GEMINI_API_KEY,
+    FAKE_GITHUB_TOKEN,
+    FAKE_INVALID_API_KEY,
+    FAKE_JENKINS_TOKEN,
+    FAKE_OTHER_TOKEN,
+    FAKE_TEST_TOKEN,
+)
 
 
 class TestServiceConfig:
@@ -48,18 +59,18 @@ class TestServiceConfig:
         config = service_config.get_jenkins_config()
         assert config["url"] == "https://fake-jenkins.example.com"
         assert config["username"] == "testuser"
-        assert config["password"] == "fake_token_123"  # pragma: allowlist secret
+        assert config["password"] == FAKE_JENKINS_TOKEN
         assert config["verify_ssl"] is True
 
     def test_get_github_config(self, service_config):
         """Test getting GitHub configuration."""
         config = service_config.get_github_config()
-        assert config["token"] == "fake_github_token_xyz"  # pragma: allowlist secret
+        assert config["token"] == FAKE_GITHUB_TOKEN
 
     def test_get_ai_config(self, service_config):
         """Test getting AI configuration."""
         config = service_config.get_ai_config()
-        assert config["api_key"] == "AIzaSyFakeKeyExample123456789"  # pragma: allowlist secret
+        assert config["api_key"] == FAKE_GEMINI_API_KEY
         assert config["model"] == "gemini-1.5-pro"
         assert config["temperature"] == 0.7
         assert config["max_tokens"] == 4096
@@ -75,7 +86,7 @@ class TestServiceConfig:
         mock_jenkins_class.assert_called_once_with(
             url="https://fake-jenkins.example.com",
             username="testuser",
-            password="fake_token_123",  # pragma: allowlist secret
+            password=FAKE_JENKINS_TOKEN,
             verify_ssl=True,
         )
         assert client == mock_client
@@ -89,14 +100,14 @@ class TestServiceConfig:
         client = service_config.create_configured_jenkins_client(
             url="https://other-jenkins.example.com",
             username="otheruser",
-            password="other_token",  # pragma: allowlist secret
+            password=FAKE_OTHER_TOKEN,
             verify_ssl=False,
         )
 
         mock_jenkins_class.assert_called_once_with(
             url="https://other-jenkins.example.com",
             username="otheruser",
-            password="other_token",  # pragma: allowlist secret
+            password=FAKE_OTHER_TOKEN,
             verify_ssl=False,
         )
         assert client == mock_client
@@ -112,7 +123,7 @@ class TestServiceConfig:
         mock_jenkins_class.assert_called_once_with(
             url="https://override-jenkins.example.com",
             username="testuser",  # From settings
-            password="fake_token_123",  # pragma: allowlist secret - From settings
+            password=FAKE_JENKINS_TOKEN,  # From settings
             verify_ssl=True,  # From settings
         )
         assert client == mock_client
@@ -128,7 +139,7 @@ class TestServiceConfig:
 
         client = service_config.create_configured_ai_client()
 
-        mock_gemini_class.assert_called_once_with(api_key="AIzaSyFakeKeyExample123456789")  # pragma: allowlist secret
+        mock_gemini_class.assert_called_once_with(api_key=FAKE_GEMINI_API_KEY)
         mock_analyzer_class.assert_called_once_with(client=mock_gemini_client)
         assert client == mock_analyzer
 
@@ -141,11 +152,9 @@ class TestServiceConfig:
         mock_analyzer = Mock()
         mock_analyzer_class.return_value = mock_analyzer
 
-        client = service_config.create_configured_ai_client(
-            api_key="AIzaSyCustomKeyExample123"  # pragma: allowlist secret
-        )
+        client = service_config.create_configured_ai_client(api_key=FAKE_CUSTOM_API_KEY)
 
-        mock_gemini_class.assert_called_once_with(api_key="AIzaSyCustomKeyExample123")  # pragma: allowlist secret
+        mock_gemini_class.assert_called_once_with(api_key=FAKE_CUSTOM_API_KEY)
         mock_analyzer_class.assert_called_once_with(client=mock_gemini_client)
         assert client == mock_analyzer
 
@@ -177,7 +186,7 @@ class TestServiceConfig:
             repo_url="https://github.com/testorg/testrepo",
             branch=None,
             commit=None,
-            github_token="fake_github_token_xyz",  # pragma: allowlist secret,
+            github_token=FAKE_GITHUB_TOKEN,
         )
         assert client == mock_client
 
@@ -195,7 +204,7 @@ class TestServiceConfig:
             repo_url="https://github.com/testorg/testrepo",
             branch="develop",
             commit=None,
-            github_token="custom_token_xyz",
+            github_token=FAKE_CUSTOM_TOKEN,
         )
         assert client == mock_client
 
@@ -215,7 +224,7 @@ class TestServiceConfig:
         result = service_config.test_jenkins_connection(
             url="https://test-jenkins.example.com",
             username="testuser",
-            password="test_token",  # pragma: allowlist secret
+            password=FAKE_TEST_TOKEN,
             verify_ssl=False,  # pragma: allowlist secret
         )
 
@@ -223,7 +232,7 @@ class TestServiceConfig:
         mock_jenkins_class.assert_called_once_with(
             url="https://test-jenkins.example.com",
             username="testuser",
-            password="test_token",  # pragma: allowlist secret
+            password=FAKE_TEST_TOKEN,
             verify_ssl=False,
         )
 
@@ -238,7 +247,7 @@ class TestServiceConfig:
             service_config.test_jenkins_connection(
                 url="https://bad-jenkins.example.com",
                 username="testuser",
-                password="bad_token",  # pragma: allowlist secret
+                password=FAKE_BAD_TOKEN,
             )
 
     @patch("backend.services.service_config.JenkinsClient")
@@ -250,7 +259,7 @@ class TestServiceConfig:
             service_config.test_jenkins_connection(
                 url="https://error-jenkins.example.com",
                 username="testuser",
-                password="test_token",  # pragma: allowlist secret
+                password=FAKE_TEST_TOKEN,
             )
 
     @patch("backend.services.service_config.requests.get")
@@ -261,7 +270,7 @@ class TestServiceConfig:
         mock_response.json.return_value = {"login": "testuser"}
         mock_get.return_value = mock_response
 
-        result = service_config.test_github_connection(token="fake_github_token")
+        result = service_config.test_github_connection(token=FAKE_GITHUB_TOKEN)
 
         assert result is True
         mock_get.assert_called_once()
@@ -275,7 +284,7 @@ class TestServiceConfig:
         mock_get.return_value = mock_response
 
         with pytest.raises(ConnectionError, match="GitHub API error"):
-            service_config.test_github_connection(token="bad_token")
+            service_config.test_github_connection(token=FAKE_BAD_TOKEN)
 
     @patch("backend.services.service_config.requests.get")
     def test_test_github_connection_exception(self, mock_get, service_config):
@@ -283,7 +292,7 @@ class TestServiceConfig:
         mock_get.side_effect = Exception("Network error")
 
         with pytest.raises(ConnectionError, match="GitHub connection error"):
-            service_config.test_github_connection(token="test_token")  # pragma: allowlist secret
+            service_config.test_github_connection(token=FAKE_TEST_TOKEN)
 
     @patch("backend.services.service_config.GeminiClient")
     def test_test_ai_connection_success(self, mock_gemini_class, service_config):
@@ -291,10 +300,10 @@ class TestServiceConfig:
         mock_client = Mock()
         mock_gemini_class.return_value = mock_client
 
-        result = service_config.test_ai_connection(api_key="AIzaSyTestKey123")  # pragma: allowlist secret
+        result = service_config.test_ai_connection(api_key=FAKE_CUSTOM_API_KEY)
 
         assert result is True
-        mock_gemini_class.assert_called_once_with(api_key="AIzaSyTestKey123")  # pragma: allowlist secret
+        mock_gemini_class.assert_called_once_with(api_key=FAKE_CUSTOM_API_KEY)
 
     @patch("backend.services.service_config.GeminiClient")
     def test_test_ai_connection_failure(self, mock_gemini_class, service_config):
@@ -302,7 +311,7 @@ class TestServiceConfig:
         mock_gemini_class.side_effect = Exception("Invalid API key")
 
         with pytest.raises(ConnectionError, match="AI service connection error"):
-            service_config.test_ai_connection(api_key="invalid_key")  # pragma: allowlist secret
+            service_config.test_ai_connection(api_key=FAKE_INVALID_API_KEY)
 
     @patch("backend.services.service_config.GeminiClient")
     def test_test_ai_connection_exception(self, mock_gemini_class, service_config):
@@ -310,7 +319,7 @@ class TestServiceConfig:
         mock_gemini_class.side_effect = Exception("API error")
 
         with pytest.raises(ConnectionError, match="AI service connection error"):
-            service_config.test_ai_connection(api_key="test_key")  # pragma: allowlist secret
+            service_config.test_ai_connection(api_key=FAKE_TEST_TOKEN)
 
     def test_get_user_preferences(self, service_config):
         """Test getting user preferences."""
@@ -401,5 +410,5 @@ class TestServiceConfig:
         settings = service_config.get_settings()
         assert settings == mock_app_settings
         assert settings.jenkins.url == "https://fake-jenkins.example.com"
-        assert settings.github.token == "fake_github_token_xyz"  # pragma: allowlist secret
-        assert settings.ai.gemini_api_key == "AIzaSyFakeKeyExample123456789"  # pragma: allowlist secret
+        assert settings.github.token == FAKE_GITHUB_TOKEN
+        assert settings.ai.gemini_api_key == FAKE_GEMINI_API_KEY

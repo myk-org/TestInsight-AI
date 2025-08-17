@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from backend.services.git_client import GitClient
+from backend.tests.conftest import FAKE_COMMIT_HASH
 
 
 class TestGitClient:
@@ -58,15 +59,15 @@ class TestGitClient:
 
             client = GitClient(
                 repo_url="https://github.com/testorg/testrepo",
-                commit="abc123def456",  # pragma: allowlist secret
+                commit=FAKE_COMMIT_HASH,
             )
 
             assert client.repo_url == "https://github.com/testorg/testrepo"
             assert client.branch is None
-            assert client.commit == "abc123def456"  # pragma: allowlist secret
+            assert client.commit == FAKE_COMMIT_HASH
             assert client.github_token is None
 
-            mock_cloned_repo.git.checkout.assert_called_once_with("abc123def456")  # pragma: allowlist secret
+            mock_cloned_repo.git.checkout.assert_called_once_with(FAKE_COMMIT_HASH)
             mock_repo_class.assert_called_once_with(Path(fake_repo_path))
 
     def test_init_with_github_token(self):
@@ -106,7 +107,7 @@ class TestGitClient:
             GitClient(
                 repo_url="https://github.com/testorg/testrepo",
                 branch="main",
-                commit="abc123def456",  # pragma: allowlist secret
+                commit=FAKE_COMMIT_HASH,
             )
 
     def test_get_file_content_success(self):
