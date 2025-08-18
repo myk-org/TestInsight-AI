@@ -269,7 +269,7 @@ class TestGeminiClient:
         mock_genai_client.return_value = mock_client_instance
 
         mock_model = Mock()
-        mock_model.name = "models/gemini-minimal"
+        mock_model.name = "models/gemini-pro"
         mock_model.supported_generation_methods = ["generateContent"]
         # Missing other attributes - should use defaults
         del mock_model.display_name
@@ -289,8 +289,8 @@ class TestGeminiClient:
 
             assert result.total_count == 1
             model = result.models[0]
-            assert model.name == "gemini-minimal"
-            assert model.display_name == "gemini-minimal"  # Falls back to name
+            assert model.name == "gemini-pro"
+            assert model.display_name == "gemini-pro"  # Falls back to name
             assert model.description == ""
             assert model.version == ""
             assert model.input_token_limit == 0

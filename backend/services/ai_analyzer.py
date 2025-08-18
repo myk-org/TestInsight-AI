@@ -124,14 +124,22 @@ class AIAnalyzer:
         Returns:
             Summary text
         """
+        # Limit context to 1000 characters
+        truncated_context = context[:1000]
+        if len(context) > 1000:
+            truncated_context += "..."
+
+        # Limit insights to first 5
+        limited_insights = insights[:5]
+
         prompt = f"""
         Based on the following test analysis context and insights, provide a concise summary of the overall situation.
 
         Context:
-        {context[:1000]}...
+        {truncated_context}
 
         Key Insights:
-        {self._format_insights_for_prompt(insights[:5])}
+        {self._format_insights_for_prompt(limited_insights)}
 
         Provide a brief 2-3 sentence summary highlighting the most important findings.
         """
@@ -152,14 +160,22 @@ class AIAnalyzer:
         Returns:
             List of recommendations
         """
+        # Limit context to 500 characters
+        truncated_context = context[:500]
+        if len(context) > 500:
+            truncated_context += "..."
+
+        # Limit insights to first 3
+        limited_insights = insights[:3]
+
         prompt = f"""
         Based on the analysis context and insights, provide specific, actionable recommendations.
 
         Context Summary:
-        {context[:500]}...
+        {truncated_context}
 
         Top Insights:
-        {self._format_insights_for_prompt(insights[:3])}
+        {self._format_insights_for_prompt(limited_insights)}
 
         Return ONLY a JSON array of strings, no other text. Example format:
         ["Recommendation 1", "Recommendation 2", "Recommendation 3", "Additional recommendations as needed"]

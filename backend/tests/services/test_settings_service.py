@@ -32,7 +32,7 @@ class TestSettingsService:
         with tempfile.TemporaryDirectory() as temp_dir:
             settings_file = Path(temp_dir) / "settings.json"
 
-            with patch("backend.services.settings_service.get_encryption", return_value=None):
+            with patch("backend.services.settings_service.SettingsEncryption", return_value=None):
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=False)
 
                 assert service.settings_file == settings_file
@@ -45,7 +45,7 @@ class TestSettingsService:
         with tempfile.TemporaryDirectory() as temp_dir:
             settings_file = Path(temp_dir) / "nested" / "dir" / "settings.json"
 
-            with patch("backend.services.settings_service.get_encryption", return_value=None):
+            with patch("backend.services.settings_service.SettingsEncryption", return_value=None):
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=False)
 
                 # Verify service created the directories and file
@@ -58,7 +58,7 @@ class TestSettingsService:
             settings_file = Path(temp_dir) / "settings.json"
             mock_encryption = Mock()
 
-            with patch("backend.services.settings_service.get_encryption", return_value=mock_encryption):
+            with patch("backend.services.settings_service.SettingsEncryption", return_value=mock_encryption):
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=True)
 
                 assert service.enable_encryption is True
@@ -88,7 +88,7 @@ class TestSettingsService:
             settings_file = Path(temp_dir) / "settings.json"
             settings_file.write_text(json.dumps(fake_settings_data))
 
-            with patch("backend.services.settings_service.get_encryption", return_value=None):
+            with patch("backend.services.settings_service.SettingsEncryption", return_value=None):
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=False)
 
                 settings = service.get_settings()
@@ -104,7 +104,7 @@ class TestSettingsService:
         with tempfile.TemporaryDirectory() as temp_dir:
             settings_file = Path(temp_dir) / "settings.json"
 
-            with patch("backend.services.settings_service.get_encryption", return_value=None):
+            with patch("backend.services.settings_service.SettingsEncryption", return_value=None):
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=False)
 
                 # First call
@@ -120,7 +120,7 @@ class TestSettingsService:
             settings_file = Path(temp_dir) / "settings.json"
             settings_file.write_text("invalid json content")
 
-            with patch("backend.services.settings_service.get_encryption", return_value=None):
+            with patch("backend.services.settings_service.SettingsEncryption", return_value=None):
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=False)
 
                 settings = service.get_settings()
@@ -135,7 +135,7 @@ class TestSettingsService:
         with tempfile.TemporaryDirectory() as temp_dir:
             settings_file = Path(temp_dir) / "settings.json"
 
-            with patch("backend.services.settings_service.get_encryption", return_value=None):
+            with patch("backend.services.settings_service.SettingsEncryption", return_value=None):
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=False)
 
                 update = SettingsUpdate(
@@ -160,7 +160,7 @@ class TestSettingsService:
         with tempfile.TemporaryDirectory() as temp_dir:
             settings_file = Path(temp_dir) / "settings.json"
 
-            with patch("backend.services.settings_service.get_encryption", return_value=None):
+            with patch("backend.services.settings_service.SettingsEncryption", return_value=None):
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=False)
 
                 update = SettingsUpdate(
@@ -205,7 +205,7 @@ class TestSettingsService:
             settings_file = Path(temp_dir) / "settings.json"
             settings_file.write_text(json.dumps(fake_existing))
 
-            with patch("backend.services.settings_service.get_encryption", return_value=None):
+            with patch("backend.services.settings_service.SettingsEncryption", return_value=None):
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=False)
 
                 # Update only Jenkins URL - when updating a section, all fields in that section
@@ -239,7 +239,7 @@ class TestSettingsService:
             settings_file = Path(temp_dir) / "settings.json"
             settings_file.write_text(json.dumps(fake_existing))
 
-            with patch("backend.services.settings_service.get_encryption", return_value=None):
+            with patch("backend.services.settings_service.SettingsEncryption", return_value=None):
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=False)
 
                 result = service.reset_settings()
@@ -266,7 +266,7 @@ class TestSettingsService:
             settings_file = Path(temp_dir) / "settings.json"
             settings_file.write_text(json.dumps(fake_settings))
 
-            with patch("backend.services.settings_service.get_encryption", return_value=None):
+            with patch("backend.services.settings_service.SettingsEncryption", return_value=None):
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=False)
 
                 masked = service.get_masked_settings()
@@ -296,7 +296,7 @@ class TestSettingsService:
             settings_file = Path(temp_dir) / "settings.json"
             settings_file.write_text(json.dumps(fake_settings, default=str))
 
-            with patch("backend.services.settings_service.get_encryption", return_value=None):
+            with patch("backend.services.settings_service.SettingsEncryption", return_value=None):
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=False)
 
                 masked = service.get_masked_settings()
@@ -367,7 +367,7 @@ class TestSettingsService:
             settings_file = Path(temp_dir) / "settings.json"
 
             with (
-                patch("backend.services.settings_service.get_encryption", return_value=None),
+                patch("backend.services.settings_service.SettingsEncryption", return_value=None),
                 patch.object(SettingsValidator, "validate_gemini_api_key", return_value=[]),
             ):
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=False)
@@ -396,7 +396,7 @@ class TestSettingsService:
         with tempfile.TemporaryDirectory() as temp_dir:
             settings_file = Path(temp_dir) / "settings.json"
 
-            with patch("backend.services.settings_service.get_encryption", return_value=mock_encryption):
+            with patch("backend.services.settings_service.SettingsEncryption", return_value=mock_encryption):
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=True)
 
                 settings_dict = {
@@ -422,7 +422,7 @@ class TestSettingsService:
         with tempfile.TemporaryDirectory() as temp_dir:
             settings_file = Path(temp_dir) / "settings.json"
 
-            with patch("backend.services.settings_service.get_encryption", return_value=None):
+            with patch("backend.services.settings_service.SettingsEncryption", return_value=None):
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=False)
 
                 settings_dict = {"jenkins": {"api_token": "secret_token"}}
@@ -441,7 +441,7 @@ class TestSettingsService:
         with tempfile.TemporaryDirectory() as temp_dir:
             settings_file = Path(temp_dir) / "settings.json"
 
-            with patch("backend.services.settings_service.get_encryption", return_value=mock_encryption):
+            with patch("backend.services.settings_service.SettingsEncryption", return_value=mock_encryption):
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=True)
 
                 settings_dict = {
@@ -464,7 +464,7 @@ class TestSettingsService:
         with tempfile.TemporaryDirectory() as temp_dir:
             settings_file = Path(temp_dir) / "settings.json"
 
-            with patch("backend.services.settings_service.get_encryption", return_value=mock_encryption):
+            with patch("backend.services.settings_service.SettingsEncryption", return_value=mock_encryption):
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=True)
 
                 settings_dict = {"jenkins": {"api_token": "plain_token"}}
@@ -482,7 +482,7 @@ class TestSettingsService:
             settings_file = Path(temp_dir) / "settings.json"
             settings_file.write_text(json.dumps(fake_settings))
 
-            with patch("backend.services.settings_service.get_encryption", return_value=None):
+            with patch("backend.services.settings_service.SettingsEncryption", return_value=None):
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=False)
 
                 backup_path = service.backup_settings()
@@ -501,7 +501,7 @@ class TestSettingsService:
             settings_file = Path(temp_dir) / "settings.json"
             custom_backup = Path(temp_dir) / "custom_backup.json"
 
-            with patch("backend.services.settings_service.get_encryption", return_value=None):
+            with patch("backend.services.settings_service.SettingsEncryption", return_value=None):
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=False)
 
                 result_path = service.backup_settings(str(custom_backup))
@@ -522,7 +522,7 @@ class TestSettingsService:
             backup_file = Path(temp_dir) / "backup.json"
             backup_file.write_text(json.dumps(backup_data))
 
-            with patch("backend.services.settings_service.get_encryption", return_value=None):
+            with patch("backend.services.settings_service.SettingsEncryption", return_value=None):
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=False)
 
                 result = service.restore_settings(str(backup_file))
@@ -540,7 +540,7 @@ class TestSettingsService:
         with tempfile.TemporaryDirectory() as temp_dir:
             settings_file = Path(temp_dir) / "settings.json"
 
-            with patch("backend.services.settings_service.get_encryption", return_value=None):
+            with patch("backend.services.settings_service.SettingsEncryption", return_value=None):
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=False)
 
                 with pytest.raises(FileNotFoundError, match="Backup file not found"):
@@ -553,7 +553,7 @@ class TestSettingsService:
             backup_file = Path(temp_dir) / "invalid_backup.json"
             backup_file.write_text("invalid json content")
 
-            with patch("backend.services.settings_service.get_encryption", return_value=None):
+            with patch("backend.services.settings_service.SettingsEncryption", return_value=None):
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=False)
 
                 with pytest.raises(ValueError, match="Invalid backup file"):
@@ -564,7 +564,7 @@ class TestSettingsService:
         with tempfile.TemporaryDirectory() as temp_dir:
             settings_file = Path(temp_dir) / "settings.json"
 
-            with patch("backend.services.settings_service.get_encryption", return_value=None):
+            with patch("backend.services.settings_service.SettingsEncryption", return_value=None):
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=False)
 
                 settings = AppSettings(last_updated=datetime.now())
@@ -583,7 +583,7 @@ class TestSettingsService:
             settings_file = Path(temp_dir) / "settings.json"
 
             with (
-                patch("backend.services.settings_service.get_encryption", return_value=mock_encryption),
+                patch("backend.services.settings_service.SettingsEncryption", return_value=mock_encryption),
                 patch("builtins.print") as mock_print,
             ):  # Capture print statements
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=True)
@@ -612,7 +612,7 @@ class TestSettingsService:
             settings_file.write_text(json.dumps(settings_data))
 
             with (
-                patch("backend.services.settings_service.get_encryption", return_value=mock_encryption),
+                patch("backend.services.settings_service.SettingsEncryption", return_value=mock_encryption),
                 patch("builtins.print") as mock_print,
             ):
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=True)

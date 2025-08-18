@@ -245,7 +245,7 @@ class GeminiModelInfo(BaseModel):
 class GeminiModelsRequest(BaseModel):
     """Request to fetch available Gemini models."""
 
-    api_key: str = Field(..., description="Gemini API key", min_length=20)
+    api_key: str | None = Field(None, description="Gemini API key (uses settings if not provided)")
 
 
 class GeminiModelsResponse(BaseModel):

@@ -4,7 +4,10 @@ import pytest
 from unittest.mock import Mock, patch
 
 from backend.models.schemas import AppSettings, JenkinsSettings, GitHubSettings, AISettings, UserPreferences
-from backend.services.service_config import ServiceConfig
+from backend.services.service_config.client_creators import ServiceClientCreators
+from backend.services.service_config.connection_testers import ServiceConnectionTesters
+from backend.services.service_config.status_checkers import ServiceStatusCheckers
+from backend.services.service_config.config_getters import ServiceConfigGetters
 from backend.tests.conftest import (
     FAKE_BAD_TOKEN,
     FAKE_CUSTOM_API_KEY,
@@ -42,62 +45,89 @@ class TestServiceConfig:
         )
 
     @pytest.fixture
-    def service_config(self, mock_app_settings):
-        """Create ServiceConfig instance with mocked SettingsService."""
-        with patch("backend.services.service_config.SettingsService") as mock_settings_service_class:
+    def service_config_getters(self, mock_app_settings):
+        """Create ServiceConfigGetters instance with mocked SettingsService."""
+        with patch("backend.services.service_config.base.SettingsService") as mock_settings_service_class:
             mock_settings_service = Mock()
             mock_settings_service.get_settings.return_value = mock_app_settings
             mock_settings_service_class.return_value = mock_settings_service
-            return ServiceConfig()
+            yield ServiceConfigGetters()
 
-    def test_init(self, service_config):
-        """Test ServiceConfig initialization."""
-        assert service_config is not None
+    @pytest.fixture
+    def service_client_creators(self, mock_app_settings):
+        """Create ServiceClientCreators instance with mocked SettingsService."""
+        with patch("backend.services.service_config.base.SettingsService") as mock_settings_service_class:
+            mock_settings_service = Mock()
+            mock_settings_service.get_settings.return_value = mock_app_settings
+            mock_settings_service_class.return_value = mock_settings_service
+            yield ServiceClientCreators()
 
-    def test_get_jenkins_config(self, service_config):
+    @pytest.fixture
+    def service_connection_testers(self, mock_app_settings):
+        """Create ServiceConnectionTesters instance with mocked SettingsService."""
+        with patch("backend.services.service_config.base.SettingsService") as mock_settings_service_class:
+            mock_settings_service = Mock()
+            mock_settings_service.get_settings.return_value = mock_app_settings
+            mock_settings_service_class.return_value = mock_settings_service
+            yield ServiceConnectionTesters()
+
+    @pytest.fixture
+    def service_status_checkers(self, mock_app_settings):
+        """Create ServiceStatusCheckers instance with mocked SettingsService."""
+        with patch("backend.services.service_config.base.SettingsService") as mock_settings_service_class:
+            mock_settings_service = Mock()
+            mock_settings_service.get_settings.return_value = mock_app_settings
+            mock_settings_service_class.return_value = mock_settings_service
+            yield ServiceStatusCheckers()
+
+    def test_init_getters(self, service_config_getters):
+        """Test ServiceConfigGetters initialization."""
+        assert service_config_getters is not None
+
+    def test_get_jenkins_config(self, service_config_getters):
         """Test getting Jenkins configuration."""
-        config = service_config.get_jenkins_config()
+        config = service_config_getters.get_jenkins_config()
         assert config["url"] == "https://fake-jenkins.example.com"
         assert config["username"] == "testuser"
         assert config["password"] == FAKE_JENKINS_TOKEN
         assert config["verify_ssl"] is True
 
-    def test_get_github_config(self, service_config):
+    def test_get_github_config(self, service_config_getters):
         """Test getting GitHub configuration."""
-        config = service_config.get_github_config()
+        config = service_config_getters.get_github_config()
         assert config["token"] == FAKE_GITHUB_TOKEN
 
-    def test_get_ai_config(self, service_config):
+    def test_get_ai_config(self, service_config_getters):
         """Test getting AI configuration."""
-        config = service_config.get_ai_config()
+        config = service_config_getters.get_ai_config()
         assert config["api_key"] == FAKE_GEMINI_API_KEY
         assert config["model"] == "gemini-1.5-pro"
         assert config["temperature"] == 0.7
         assert config["max_tokens"] == 4096
 
-    @patch("backend.services.service_config.JenkinsClient")
-    def test_create_configured_jenkins_client_with_settings(self, mock_jenkins_class, service_config):
+    def test_create_configured_jenkins_client_with_settings(self, service_client_creators):
         """Test creating Jenkins client using settings."""
-        mock_client = Mock()
-        mock_jenkins_class.return_value = mock_client
+        with patch("backend.services.service_config.client_creators.JenkinsClient") as mock_jenkins_class:
+            mock_client = Mock()
+            mock_jenkins_class.return_value = mock_client
 
-        client = service_config.create_configured_jenkins_client()
+            client = service_client_creators.create_configured_jenkins_client()
 
-        mock_jenkins_class.assert_called_once_with(
-            url="https://fake-jenkins.example.com",
-            username="testuser",
-            password=FAKE_JENKINS_TOKEN,
-            verify_ssl=True,
-        )
-        assert client == mock_client
+            mock_jenkins_class.assert_called_once_with(
+                url="https://fake-jenkins.example.com",
+                username="testuser",
+                password=FAKE_JENKINS_TOKEN,
+                verify_ssl=True,
+            )
+            assert client == mock_client
 
-    @patch("backend.services.service_config.JenkinsClient")
-    def test_create_configured_jenkins_client_with_args(self, mock_jenkins_class, service_config):
+    @patch("backend.services.service_config.client_creators.JenkinsClient")
+    def test_create_configured_jenkins_client_with_args(self, mock_jenkins_class, service_client_creators):
         """Test creating Jenkins client with provided arguments."""
         mock_client = Mock()
         mock_jenkins_class.return_value = mock_client
 
-        client = service_config.create_configured_jenkins_client(
+        client = service_client_creators.create_configured_jenkins_client(
             url="https://other-jenkins.example.com",
             username="otheruser",
             password=FAKE_OTHER_TOKEN,
@@ -112,91 +142,99 @@ class TestServiceConfig:
         )
         assert client == mock_client
 
-    @patch("backend.services.service_config.JenkinsClient")
-    def test_create_configured_jenkins_client_partial_args(self, mock_jenkins_class, service_config):
+    def test_create_configured_jenkins_client_partial_args(self, service_client_creators):
         """Test creating Jenkins client with partial arguments."""
-        mock_client = Mock()
-        mock_jenkins_class.return_value = mock_client
+        with patch("backend.services.service_config.client_creators.JenkinsClient") as mock_jenkins_class:
+            mock_client = Mock()
+            mock_jenkins_class.return_value = mock_client
 
-        client = service_config.create_configured_jenkins_client(url="https://override-jenkins.example.com")
+            client = service_client_creators.create_configured_jenkins_client(
+                url="https://override-jenkins.example.com"
+            )
 
-        mock_jenkins_class.assert_called_once_with(
-            url="https://override-jenkins.example.com",
-            username="testuser",  # From settings
-            password=FAKE_JENKINS_TOKEN,  # From settings
-            verify_ssl=True,  # From settings
-        )
-        assert client == mock_client
+            mock_jenkins_class.assert_called_once_with(
+                url="https://override-jenkins.example.com",
+                username="testuser",  # From settings
+                password=FAKE_JENKINS_TOKEN,  # From settings
+                verify_ssl=True,  # From settings
+            )
+            assert client == mock_client
 
-    @patch("backend.services.service_config.GeminiClient")
-    @patch("backend.services.service_config.AIAnalyzer")
-    def test_create_configured_ai_client_with_settings(self, mock_analyzer_class, mock_gemini_class, service_config):
+    def test_create_configured_ai_client_with_settings(self, service_client_creators):
         """Test creating AI client using settings."""
-        mock_gemini_client = Mock()
-        mock_gemini_class.return_value = mock_gemini_client
-        mock_analyzer = Mock()
-        mock_analyzer_class.return_value = mock_analyzer
+        with (
+            patch("backend.services.service_config.client_creators.GeminiClient") as mock_gemini_class,
+            patch("backend.services.service_config.client_creators.AIAnalyzer") as mock_analyzer_class,
+        ):
+            mock_gemini_client = Mock()
+            mock_gemini_class.return_value = mock_gemini_client
+            mock_analyzer = Mock()
+            mock_analyzer_class.return_value = mock_analyzer
 
-        client = service_config.create_configured_ai_client()
+            client = service_client_creators.create_configured_ai_client()
 
-        mock_gemini_class.assert_called_once_with(api_key=FAKE_GEMINI_API_KEY)
-        mock_analyzer_class.assert_called_once_with(client=mock_gemini_client)
-        assert client == mock_analyzer
+            mock_gemini_class.assert_called_once_with(api_key=FAKE_GEMINI_API_KEY)
+            mock_analyzer_class.assert_called_once_with(client=mock_gemini_client)
+            assert client == mock_analyzer
 
-    @patch("backend.services.service_config.GeminiClient")
-    @patch("backend.services.service_config.AIAnalyzer")
-    def test_create_configured_ai_client_with_args(self, mock_analyzer_class, mock_gemini_class, service_config):
+    @patch("backend.services.service_config.client_creators.GeminiClient")
+    @patch("backend.services.service_config.client_creators.AIAnalyzer")
+    def test_create_configured_ai_client_with_args(
+        self, mock_analyzer_class, mock_gemini_class, service_client_creators
+    ):
         """Test creating AI client with provided arguments."""
         mock_gemini_client = Mock()
         mock_gemini_class.return_value = mock_gemini_client
         mock_analyzer = Mock()
         mock_analyzer_class.return_value = mock_analyzer
 
-        client = service_config.create_configured_ai_client(api_key=FAKE_CUSTOM_API_KEY)
+        client = service_client_creators.create_configured_ai_client(api_key=FAKE_CUSTOM_API_KEY)
 
         mock_gemini_class.assert_called_once_with(api_key=FAKE_CUSTOM_API_KEY)
         mock_analyzer_class.assert_called_once_with(client=mock_gemini_client)
         assert client == mock_analyzer
 
-    @patch("backend.services.service_config.GeminiClient")
-    @patch("backend.services.service_config.AIAnalyzer")
+    @patch("backend.services.service_config.client_creators.GeminiClient")
+    @patch("backend.services.service_config.client_creators.AIAnalyzer")
     def test_create_configured_ai_client_no_api_key(self, mock_analyzer_class, mock_gemini_class):
         """Test creating AI client with no API key raises error."""
         # Create empty AI settings
         empty_settings = AppSettings(ai=AISettings(gemini_api_key=""))
 
-        with patch("backend.services.service_config.SettingsService") as mock_settings_service_class:
+        with patch("backend.services.service_config.base.SettingsService") as mock_settings_service_class:
             mock_settings_service = Mock()
             mock_settings_service.get_settings.return_value = empty_settings
             mock_settings_service_class.return_value = mock_settings_service
-            service_config = ServiceConfig()
+            service_client_creators = ServiceClientCreators()
 
             with pytest.raises(ValueError, match="AI service is not configured"):
-                service_config.create_configured_ai_client()
+                service_client_creators.create_configured_ai_client()
 
-    @patch("backend.services.service_config.GitClient")
-    def test_create_configured_git_client_with_settings(self, mock_git_class, service_config):
+    def test_create_configured_git_client_with_settings(self, service_client_creators):
         """Test creating Git client using settings."""
-        mock_client = Mock()
-        mock_git_class.return_value = mock_client
+        with patch("backend.services.service_config.client_creators.GitClient") as mock_git_class:
+            mock_client = Mock()
+            mock_git_class.return_value = mock_client
 
-        client = service_config.create_configured_git_client(repo_url="https://github.com/testorg/testrepo")
+            client = service_client_creators.create_configured_git_client(
+                repo_url="https://github.com/testorg/testrepo"
+            )
 
-        mock_git_class.assert_called_once_with(
-            repo_url="https://github.com/testorg/testrepo",
-            branch=None,
-            commit=None,
-            github_token=FAKE_GITHUB_TOKEN,
-        )
-        assert client == mock_client
+            mock_git_class.assert_called_once_with(
+                repo_url="https://github.com/testorg/testrepo",
+                branch=None,
+                commit=None,
+                github_token=FAKE_GITHUB_TOKEN,
+            )
+            assert client == mock_client
 
-    @patch("backend.services.service_config.GitClient")
-    def test_create_configured_git_client_with_args(self, mock_git_class, service_config):
+    @patch("backend.services.service_config.client_creators.GitClient")
+    def test_create_configured_git_client_with_args(self, mock_git_class, service_client_creators):
         """Test creating Git client with provided arguments."""
         mock_client = Mock()
         mock_git_class.return_value = mock_client
 
-        client = service_config.create_configured_git_client(
+        client = service_client_creators.create_configured_git_client(
             repo_url="https://github.com/testorg/testrepo", branch="develop", github_token="custom_token_xyz"
         )
 
@@ -208,20 +246,22 @@ class TestServiceConfig:
         )
         assert client == mock_client
 
-    @patch("backend.services.service_config.GitClient")
-    def test_create_configured_git_client_no_repo_url(self, mock_git_class, service_config):
+    @patch("backend.services.service_config.client_creators.GitClient")
+    def test_create_configured_git_client_no_repo_url(self, mock_git_class, service_client_creators):
         """Test creating Git client without repo URL raises error."""
         with pytest.raises(ValueError, match="repo_url is required"):
-            service_config.create_configured_git_client(repo_url="")
+            service_client_creators.create_configured_git_client(repo_url="")
 
-    @patch("backend.services.service_config.JenkinsClient")
-    def test_test_jenkins_connection_success(self, mock_jenkins_class, service_config):
+    @patch("backend.services.service_config.connection_testers.ServiceClientCreators")
+    def test_test_jenkins_connection_success(self, mock_client_creators_class, service_connection_testers):
         """Test successful Jenkins connection test."""
-        mock_client = Mock()
-        mock_client.is_connected.return_value = True
-        mock_jenkins_class.return_value = mock_client
+        mock_client_creators = Mock()
+        mock_jenkins_client = Mock()
+        mock_jenkins_client.is_connected.return_value = True
+        mock_client_creators.create_configured_jenkins_client.return_value = mock_jenkins_client
+        mock_client_creators_class.return_value = mock_client_creators
 
-        result = service_config.test_jenkins_connection(
+        result = service_connection_testers.test_jenkins_connection(
             url="https://test-jenkins.example.com",
             username="testuser",
             password=FAKE_TEST_TOKEN,
@@ -229,54 +269,56 @@ class TestServiceConfig:
         )
 
         assert result is True
-        mock_jenkins_class.assert_called_once_with(
+        mock_client_creators.create_configured_jenkins_client.assert_called_once_with(
             url="https://test-jenkins.example.com",
             username="testuser",
             password=FAKE_TEST_TOKEN,
             verify_ssl=False,
         )
 
-    @patch("backend.services.service_config.JenkinsClient")
-    def test_test_jenkins_connection_failure(self, mock_jenkins_class, service_config):
+    @patch("backend.services.service_config.connection_testers.ServiceClientCreators")
+    def test_test_jenkins_connection_failure(self, mock_client_creators_class, service_connection_testers):
         """Test failed Jenkins connection test."""
-        mock_client = Mock()
-        mock_client.is_connected.return_value = False
-        mock_jenkins_class.return_value = mock_client
+        mock_client_creators = Mock()
+        mock_jenkins_client = Mock()
+        mock_jenkins_client.is_connected.return_value = False
+        mock_client_creators.create_configured_jenkins_client.return_value = mock_jenkins_client
+        mock_client_creators_class.return_value = mock_client_creators
 
         with pytest.raises(ConnectionError, match="Jenkins connection failed"):
-            service_config.test_jenkins_connection(
+            service_connection_testers.test_jenkins_connection(
                 url="https://bad-jenkins.example.com",
                 username="testuser",
                 password=FAKE_BAD_TOKEN,
             )
 
-    @patch("backend.services.service_config.JenkinsClient")
-    def test_test_jenkins_connection_exception(self, mock_jenkins_class, service_config):
+    @patch("backend.services.service_config.connection_testers.ServiceClientCreators")
+    def test_test_jenkins_connection_exception(self, mock_client_creators_class, service_connection_testers):
         """Test Jenkins connection test with exception."""
-        mock_jenkins_class.side_effect = Exception("Connection error")
+        mock_client_creators_class.side_effect = Exception("Connection error")
 
         with pytest.raises(ConnectionError, match="Jenkins connection error"):
-            service_config.test_jenkins_connection(
+            service_connection_testers.test_jenkins_connection(
                 url="https://error-jenkins.example.com",
                 username="testuser",
                 password=FAKE_TEST_TOKEN,
             )
 
-    @patch("backend.services.service_config.requests.get")
-    def test_test_github_connection_success(self, mock_get, service_config):
+    @patch("backend.services.service_config.connection_testers.requests.get")
+    def test_test_github_connection_success(self, mock_get, service_connection_testers):
         """Test successful GitHub connection test."""
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"login": "testuser"}
         mock_get.return_value = mock_response
 
-        result = service_config.test_github_connection(token=FAKE_GITHUB_TOKEN)
+        result = service_connection_testers.test_github_connection(token=FAKE_GITHUB_TOKEN)
 
         assert result is True
         mock_get.assert_called_once()
 
-    @patch("backend.services.service_config.requests.get")
-    def test_test_github_connection_failure(self, mock_get, service_config):
+    @patch("backend.services.service_config.connection_testers.requests.get")
+    def test_test_github_connection_failure(self, mock_get, service_connection_testers):
         """Test failed GitHub connection test."""
         mock_response = Mock()
         mock_response.status_code = 401
@@ -284,102 +326,110 @@ class TestServiceConfig:
         mock_get.return_value = mock_response
 
         with pytest.raises(ConnectionError, match="GitHub API error"):
-            service_config.test_github_connection(token=FAKE_BAD_TOKEN)
+            service_connection_testers.test_github_connection(token=FAKE_BAD_TOKEN)
 
-    @patch("backend.services.service_config.requests.get")
-    def test_test_github_connection_exception(self, mock_get, service_config):
+    @patch("backend.services.service_config.connection_testers.requests.get")
+    def test_test_github_connection_exception(self, mock_get, service_connection_testers):
         """Test GitHub connection test with exception."""
         mock_get.side_effect = Exception("Network error")
 
         with pytest.raises(ConnectionError, match="GitHub connection error"):
-            service_config.test_github_connection(token=FAKE_TEST_TOKEN)
+            service_connection_testers.test_github_connection(token=FAKE_TEST_TOKEN)
 
-    @patch("backend.services.service_config.GeminiClient")
-    def test_test_ai_connection_success(self, mock_gemini_class, service_config):
+    @patch("backend.services.service_config.connection_testers.ServiceClientCreators")
+    def test_test_ai_connection_success(self, mock_client_creators_class, service_connection_testers):
         """Test successful AI connection test."""
-        mock_client = Mock()
-        mock_gemini_class.return_value = mock_client
+        mock_client_creators = Mock()
+        mock_ai_client = Mock()
+        mock_client_creators.create_configured_ai_client.return_value = mock_ai_client
+        mock_client_creators_class.return_value = mock_client_creators
 
-        result = service_config.test_ai_connection(api_key=FAKE_CUSTOM_API_KEY)
+        result = service_connection_testers.test_ai_connection(api_key=FAKE_CUSTOM_API_KEY)
 
         assert result is True
-        mock_gemini_class.assert_called_once_with(api_key=FAKE_CUSTOM_API_KEY)
+        mock_client_creators.create_configured_ai_client.assert_called_once_with(api_key=FAKE_CUSTOM_API_KEY)
 
-    @patch("backend.services.service_config.GeminiClient")
-    def test_test_ai_connection_failure(self, mock_gemini_class, service_config):
+    @patch("backend.services.service_config.connection_testers.ServiceClientCreators")
+    def test_test_ai_connection_failure(self, mock_client_creators_class, service_connection_testers):
         """Test failed AI connection test."""
-        mock_gemini_class.side_effect = Exception("Invalid API key")
+        mock_client_creators_class.side_effect = Exception("Invalid API key")
 
         with pytest.raises(ConnectionError, match="AI service connection error"):
-            service_config.test_ai_connection(api_key=FAKE_INVALID_API_KEY)
+            service_connection_testers.test_ai_connection(api_key=FAKE_INVALID_API_KEY)
 
-    @patch("backend.services.service_config.GeminiClient")
-    def test_test_ai_connection_exception(self, mock_gemini_class, service_config):
+    @patch("backend.services.service_config.connection_testers.ServiceClientCreators")
+    def test_test_ai_connection_exception(self, mock_client_creators_class, service_connection_testers):
         """Test AI connection test with exception."""
-        mock_gemini_class.side_effect = Exception("API error")
+        mock_client_creators_class.side_effect = Exception("API error")
 
         with pytest.raises(ConnectionError, match="AI service connection error"):
-            service_config.test_ai_connection(api_key=FAKE_TEST_TOKEN)
+            service_connection_testers.test_ai_connection(api_key=FAKE_TEST_TOKEN)
 
-    def test_get_user_preferences(self, service_config):
+    def test_get_user_preferences(self, service_config_getters):
         """Test getting user preferences."""
-        preferences = service_config.get_user_preferences()
+        preferences = service_config_getters.get_user_preferences()
         assert preferences["theme"] == "system"
         assert preferences["language"] == "en"
         assert preferences["auto_refresh"] is True
         assert preferences["results_per_page"] == 10
 
-    def test_is_jenkins_configured(self, service_config):
+    def test_is_jenkins_configured(self, service_status_checkers):
         """Test Jenkins configuration check."""
-        assert service_config.is_jenkins_configured() is True
+        assert service_status_checkers.is_jenkins_configured() is True
 
     def test_is_jenkins_not_configured(self):
         """Test Jenkins not configured."""
         empty_settings = AppSettings(jenkins=JenkinsSettings(url="", username="", api_token=""))
 
-        with patch("backend.services.service_config.SettingsService") as mock_settings_service_class:
+        with patch("backend.services.service_config.base.SettingsService") as mock_settings_service_class:
             mock_settings_service = Mock()
             mock_settings_service.get_settings.return_value = empty_settings
             mock_settings_service_class.return_value = mock_settings_service
-            service_config = ServiceConfig()
+            from backend.services.service_config.status_checkers import ServiceStatusCheckers
 
-            assert service_config.is_jenkins_configured() is False
+            service_status_checkers = ServiceStatusCheckers()
 
-    def test_is_github_configured(self, service_config):
+            assert service_status_checkers.is_jenkins_configured() is False
+
+    def test_is_github_configured(self, service_status_checkers):
         """Test GitHub configuration check."""
-        assert service_config.is_github_configured() is True
+        assert service_status_checkers.is_github_configured() is True
 
     def test_is_github_not_configured(self):
         """Test GitHub not configured."""
         empty_settings = AppSettings(github=GitHubSettings(token=""))
 
-        with patch("backend.services.service_config.SettingsService") as mock_settings_service_class:
+        with patch("backend.services.service_config.base.SettingsService") as mock_settings_service_class:
             mock_settings_service = Mock()
             mock_settings_service.get_settings.return_value = empty_settings
             mock_settings_service_class.return_value = mock_settings_service
-            service_config = ServiceConfig()
+            from backend.services.service_config.status_checkers import ServiceStatusCheckers
 
-            assert service_config.is_github_configured() is False
+            service_status_checkers = ServiceStatusCheckers()
 
-    def test_is_ai_configured(self, service_config):
+            assert service_status_checkers.is_github_configured() is False
+
+    def test_is_ai_configured(self, service_status_checkers):
         """Test AI configuration check."""
-        assert service_config.is_ai_configured() is True
+        assert service_status_checkers.is_ai_configured() is True
 
     def test_is_ai_not_configured(self):
         """Test AI not configured."""
         empty_settings = AppSettings(ai=AISettings(gemini_api_key=""))
 
-        with patch("backend.services.service_config.SettingsService") as mock_settings_service_class:
+        with patch("backend.services.service_config.base.SettingsService") as mock_settings_service_class:
             mock_settings_service = Mock()
             mock_settings_service.get_settings.return_value = empty_settings
             mock_settings_service_class.return_value = mock_settings_service
-            service_config = ServiceConfig()
+            from backend.services.service_config.status_checkers import ServiceStatusCheckers
 
-            assert service_config.is_ai_configured() is False
+            service_status_checkers = ServiceStatusCheckers()
 
-    def test_get_service_status(self, service_config):
+            assert service_status_checkers.is_ai_configured() is False
+
+    def test_get_service_status(self, service_status_checkers):
         """Test getting service status."""
-        status = service_config.get_service_status()
+        status = service_status_checkers.get_service_status()
 
         assert "jenkins" in status
         assert "github" in status
@@ -405,9 +455,9 @@ class TestServiceConfig:
         assert ai_config["temperature"] == 0.7
         assert ai_config["max_tokens"] == 4096
 
-    def test_get_settings(self, service_config, mock_app_settings):
+    def test_get_settings(self, service_config_getters, mock_app_settings):
         """Test getting settings."""
-        settings = service_config.get_settings()
+        settings = service_config_getters.get_settings()
         assert settings == mock_app_settings
         assert settings.jenkins.url == "https://fake-jenkins.example.com"
         assert settings.github.token == FAKE_GITHUB_TOKEN

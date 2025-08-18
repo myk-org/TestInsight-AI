@@ -233,7 +233,7 @@ class SettingsValidator:
             return errors
 
         # Skip validation for encrypted tokens (they will have base64-like format)
-        encryption = get_encryption()
+        encryption = SettingsEncryption()
         if encryption.is_encrypted(token):
             return errors  # Don't validate encrypted tokens
 
@@ -286,37 +286,38 @@ class SettingsValidator:
         return errors
 
 
-# Global encryption instance
-_encryption: SettingsEncryption | None = None
-
-
-def get_encryption() -> SettingsEncryption:
-    """Get the global encryption instance.
-
-    Returns:
-        Settings encryption instance
-    """
-    global _encryption
-    if _encryption is None:
-        _encryption = SettingsEncryption()
-    return _encryption
-
-
 def generate_encryption_key() -> str:
-    """Generate a new encryption key for settings.
+    """Generate a new encryption key.
 
     Returns:
         Base64 encoded encryption key
     """
-    return Fernet.generate_key().decode()
+    key = Fernet.generate_key()
+    return base64.urlsafe_b64encode(key).decode()
+
+
+# Singleton instance
+_encryption_instance: SettingsEncryption | None = None
+
+
+def get_encryption() -> SettingsEncryption:
+    """Get a default SettingsEncryption instance (singleton).
+
+    Returns:
+        SettingsEncryption instance
+    """
+    global _encryption_instance
+    if _encryption_instance is None:
+        _encryption_instance = SettingsEncryption()
+    return _encryption_instance
 
 
 def secure_compare(a: str, b: str) -> bool:
     """Securely compare two strings to prevent timing attacks.
 
     Args:
-        a: First string
-        b: Second string
+        a: First string to compare
+        b: Second string to compare
 
     Returns:
         True if strings are equal
@@ -327,5 +328,4 @@ def secure_compare(a: str, b: str) -> bool:
     result = 0
     for x, y in zip(a, b):
         result |= ord(x) ^ ord(y)
-
     return result == 0
