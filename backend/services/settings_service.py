@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.models.schemas import AppSettings, SettingsUpdate
-from backend.services.security_utils import SettingsValidator, get_encryption
+from backend.services.security_utils import SettingsEncryption, SettingsValidator
 
 
 class SettingsService:
@@ -26,7 +26,7 @@ class SettingsService:
         self.settings_file = Path(settings_path)
         self._current_settings: AppSettings | None = None
         self.enable_encryption = enable_encryption
-        self._encryption = get_encryption() if enable_encryption else None
+        self._encryption = SettingsEncryption() if enable_encryption else None
 
         # Ensure the settings file exists with default values
         if not self.settings_file.exists():
@@ -72,12 +72,25 @@ class SettingsService:
         # Add timestamp
         update_data["last_updated"] = datetime.now()
 
-        # Merge with current settings
+        # Merge with current settings, preserving existing secrets when empty values are sent
         current_dict = current.model_dump()
+
+        # Define which fields are secrets that should be preserved when empty
+        secret_fields = {"jenkins": ["api_token"], "github": ["token"], "ai": ["gemini_api_key"]}
+
         for section, data in update_data.items():
             if section in current_dict:
                 if isinstance(current_dict[section], dict) and isinstance(data, dict):
-                    current_dict[section].update(data)
+                    # For secret fields, only update if new value is provided and not empty
+                    for field, value in data.items():
+                        if (
+                            section in secret_fields
+                            and field in secret_fields[section]
+                            and (not value or not str(value).strip())
+                        ):
+                            # Keep existing secret value if new value is empty
+                            continue
+                        current_dict[section][field] = value
                 else:
                     current_dict[section] = data
             else:
@@ -112,7 +125,7 @@ class SettingsService:
         settings = self.get_settings()
         settings_dict = settings.model_dump()
 
-        # Mask sensitive fields
+        # Clear sensitive fields but preserve other data
         sensitive_fields = [
             ("jenkins", "api_token"),
             ("github", "token"),
@@ -122,14 +135,32 @@ class SettingsService:
         for section, field in sensitive_fields:
             if section in settings_dict and field in settings_dict[section]:
                 value = settings_dict[section][field]
-                if value:
-                    # Show only first 4 and last 4 characters
-                    if len(value) > 8:
-                        settings_dict[section][field] = f"{value[:4]}...{value[-4:]}"
-                    else:
-                        settings_dict[section][field] = "****"
+                if value and len(str(value)) > 8:
+                    # Mask long values: show first 4 and last 4 chars
+                    masked_value = f"{str(value)[:4]}...{str(value)[-4:]}"
+                    settings_dict[section][field] = masked_value
+                elif value:
+                    # For shorter values, mask completely
+                    settings_dict[section][field] = "***masked***"
+                else:
+                    # Keep empty/None values as-is
+                    settings_dict[section][field] = value
 
         return AppSettings(**settings_dict)
+
+    def get_secret_status(self) -> dict[str, dict[str, bool]]:
+        """Get status of whether secrets are configured.
+
+        Returns:
+            Dictionary indicating which secrets are set
+        """
+        settings = self.get_settings()
+
+        return {
+            "jenkins": {"api_token": bool(settings.jenkins.api_token and settings.jenkins.api_token.strip())},
+            "github": {"token": bool(settings.github.token and settings.github.token.strip())},
+            "ai": {"gemini_api_key": bool(settings.ai.gemini_api_key and settings.ai.gemini_api_key.strip())},
+        }
 
     def validate_settings(self) -> dict[str, list[str]]:
         """Validate current settings and return any issues.

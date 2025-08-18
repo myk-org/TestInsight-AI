@@ -36,7 +36,13 @@ class GeminiClient:
         Raises:
             ConnectionError: If API call fails
         """
-        return list(self.client.models.list())
+        try:
+            models = list(self.client.models.list())
+            logger.info(f"Raw models list returned {len(models)} models")
+            return models
+        except Exception as e:
+            logger.error(f"Error listing models: {e}")
+            raise ConnectionError(f"Failed to list models: {e}") from e
 
     def validate_api_key(self) -> bool:
         """Validate API key format and connection."""
@@ -67,21 +73,38 @@ class GeminiClient:
         # Convert to our schema format
         gemini_models = []
         for model in models_list:
-            # Filter to only include generative models
-            if hasattr(model, "supported_generation_methods") and model.supported_generation_methods:
-                model_name = model.name.replace("models/", "").lower()
+            model_name = model.name.replace("models/", "").lower()
 
-                # Filter for text-focused models only
+            # Filter for known generative models based on name patterns
+            # Since supported_generation_methods might not be available, use name-based filtering
+            generative_patterns = [
+                "gemini-1.5-pro",
+                "gemini-1.5-flash",
+                "gemini-2.0-flash",
+                "gemini-2.5-pro",
+                "gemini-2.5-flash",
+                "gemini-exp",
+                "gemini-pro",
+            ]
+
+            # Check if this is a generative model by name pattern
+            is_generative = any(pattern in model_name for pattern in generative_patterns)
+
+            if is_generative:
+                # Updated filter for text-focused models - exclude multimodal/specialized models
                 excluded_keywords = [
                     "embedding",
                     "vision",
                     "image",
                     "video",
                     "audio",
-                    "code",
+                    "tts",  # Text-to-speech
+                    "thinking",  # Thinking models might not be suitable for general use
                 ]
 
-                if not any(keyword in model_name for keyword in excluded_keywords):
+                is_excluded = any(keyword in model_name for keyword in excluded_keywords)
+
+                if not is_excluded:
                     gemini_models.append(
                         GeminiModelInfo(
                             name=model_name,
@@ -90,7 +113,7 @@ class GeminiClient:
                             version=getattr(model, "version", ""),
                             input_token_limit=getattr(model, "input_token_limit", 0),
                             output_token_limit=getattr(model, "output_token_limit", 0),
-                            supported_generation_methods=model.supported_generation_methods or [],
+                            supported_generation_methods=getattr(model, "supported_generation_methods", []),
                         )
                     )
 

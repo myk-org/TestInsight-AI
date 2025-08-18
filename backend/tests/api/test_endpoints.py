@@ -28,7 +28,7 @@ from backend.tests.conftest import (
 class TestAnalyzeEndpoint:
     """Test the /api/v1/analyze endpoint."""
 
-    @patch("backend.api.endpoints.ServiceConfig")
+    @patch("backend.api.routers.analysis.ServiceClientCreators")
     def test_analyze_success(self, mock_service_config, client):
         """Test successful analysis."""
         # Mock AI analyzer
@@ -54,24 +54,24 @@ class TestAnalyzeEndpoint:
         assert data["summary"] == "Test analysis summary"
         assert data["recommendations"] == ["Improve test coverage"]
 
-    @patch("backend.api.endpoints.ServiceConfig")
+    @patch("backend.api.routers.analysis.ServiceClientCreators")
     def test_analyze_no_ai_client(self, mock_service_config, client):
         """Test analysis when AI client is not configured."""
         mock_service_config.return_value.create_configured_ai_client.return_value = None
 
         response = client.post("/api/v1/analyze", data={"text": "fake test results"})
 
-        assert response.status_code == 500
+        assert response.status_code == 503
         assert "AI analyzer not configured" in response.json()["detail"]
 
-    @patch("backend.api.endpoints.ServiceConfig")
+    @patch("backend.api.routers.analysis.ServiceClientCreators")
     def test_analyze_missing_text(self, mock_service_config, client):
         """Test analysis with missing required text parameter."""
         response = client.post("/api/v1/analyze", data={})
 
         assert response.status_code == 422  # Validation error
 
-    @patch("backend.api.endpoints.ServiceConfig")
+    @patch("backend.api.routers.analysis.ServiceClientCreators")
     def test_analyze_service_error(self, mock_service_config, client):
         """Test analysis when service throws exception."""
         mock_ai_analyzer = Mock()
@@ -81,13 +81,13 @@ class TestAnalyzeEndpoint:
         response = client.post("/api/v1/analyze", data={"text": "fake test results"})
 
         assert response.status_code == 500
-        assert "Analysis failed" in response.json()["detail"]
+        assert "Text analysis failed" in response.json()["detail"]
 
 
 class TestJenkinsEndpoints:
     """Test Jenkins-related endpoints."""
 
-    @patch("backend.api.endpoints.ServiceConfig")
+    @patch("backend.api.routers.jenkins.ServiceClientCreators")
     def test_get_jenkins_jobs_success(self, mock_service_config, client):
         """Test successful retrieval of Jenkins jobs."""
         mock_jenkins_client = Mock()
@@ -107,7 +107,7 @@ class TestJenkinsEndpoints:
         assert data["total"] == 2
         assert data["jobs"] == ["test-job-1", "test-job-2"]
 
-    @patch("backend.api.endpoints.ServiceConfig")
+    @patch("backend.api.routers.jenkins.ServiceClientCreators")
     def test_get_jenkins_jobs_with_search(self, mock_service_config, client):
         """Test Jenkins jobs retrieval with search query."""
         mock_jenkins_client = Mock()
@@ -122,17 +122,19 @@ class TestJenkinsEndpoints:
         assert data["search_query"] == "test"
         assert data["total"] == 1
 
-    @patch("backend.api.endpoints.ServiceConfig")
+    @patch("backend.api.routers.jenkins.ServiceClientCreators")
     def test_get_jenkins_jobs_not_configured(self, mock_service_config, client):
         """Test Jenkins jobs when client is not configured."""
-        mock_service_config.return_value.create_configured_jenkins_client.return_value = None
+        mock_service_config.return_value.create_configured_jenkins_client.side_effect = ValueError(
+            "Jenkins is not configured. Please provide URL, username, and API token in settings or as parameters."
+        )
 
         response = client.get("/api/v1/jenkins/jobs")
 
         assert response.status_code == 503
-        assert "Jenkins client not configured" in response.json()["detail"]
+        assert "Jenkins is not configured" in response.json()["detail"]
 
-    @patch("backend.api.endpoints.ServiceConfig")
+    @patch("backend.api.routers.jenkins.ServiceClientCreators")
     def test_get_jenkins_jobs_not_connected(self, mock_service_config, client):
         """Test Jenkins jobs when client is not connected."""
         mock_jenkins_client = Mock()
@@ -142,9 +144,9 @@ class TestJenkinsEndpoints:
         response = client.get("/api/v1/jenkins/jobs")
 
         assert response.status_code == 503
-        assert "Jenkins client not configured or unavailable" in response.json()["detail"]
+        assert "Jenkins client connection failed" in response.json()["detail"]
 
-    @patch("backend.api.endpoints.ServiceConfig")
+    @patch("backend.api.routers.jenkins.ServiceClientCreators")
     def test_get_job_builds_success(self, mock_service_config, client):
         """Test successful retrieval of job builds."""
         mock_jenkins_client = Mock()
@@ -163,7 +165,7 @@ class TestJenkinsEndpoints:
         assert len(data["builds"]) == 2
         assert data["limit"] == 10
 
-    @patch("backend.api.endpoints.ServiceConfig")
+    @patch("backend.api.routers.jenkins.ServiceClientCreators")
     def test_get_job_builds_with_limit(self, mock_service_config, client):
         """Test job builds retrieval with custom limit."""
         mock_jenkins_client = Mock()
@@ -177,7 +179,7 @@ class TestJenkinsEndpoints:
         data = response.json()
         assert data["limit"] == 5
 
-    @patch("backend.api.endpoints.ServiceConfig")
+    @patch("backend.api.routers.jenkins.ServiceClientCreators")
     def test_get_build_console_success(self, mock_service_config, client):
         """Test successful retrieval of build console output."""
         mock_jenkins_client = Mock()
@@ -191,7 +193,7 @@ class TestJenkinsEndpoints:
         data = response.json()
         assert data["console_output"] == "Fake console output"
 
-    @patch("backend.api.endpoints.ServiceConfig")
+    @patch("backend.api.routers.jenkins.ServiceClientCreators")
     def test_get_build_console_not_found(self, mock_service_config, client):
         """Test console output when build is not found."""
         mock_jenkins_client = Mock()
@@ -208,7 +210,7 @@ class TestJenkinsEndpoints:
 class TestGitEndpoints:
     """Test Git-related endpoints."""
 
-    @patch("backend.api.endpoints.ServiceConfig")
+    @patch("backend.api.routers.git.ServiceClientCreators")
     def test_clone_repository_success(self, mock_service_config, client):
         """Test successful repository cloning."""
         mock_git_client = Mock()
@@ -231,7 +233,7 @@ class TestGitEndpoints:
         assert data["branch"] == "main"
         assert data["cloned_path"] == FAKE_REPO_PATH
 
-    @patch("backend.api.endpoints.ServiceConfig")
+    @patch("backend.api.routers.git.ServiceClientCreators")
     def test_clone_repository_with_commit(self, mock_service_config, client):
         """Test repository cloning with commit hash."""
         mock_git_client = Mock()
@@ -257,7 +259,7 @@ class TestGitEndpoints:
         assert response.status_code == 500  # Due to generic exception handling
         assert "Provide either branch or commit, not both" in response.json()["detail"]
 
-    @patch("backend.api.endpoints.ServiceConfig")
+    @patch("backend.api.routers.git.ServiceClientCreators")
     def test_clone_repository_git_error(self, mock_service_config, client):
         """Test repository cloning with Git error."""
         mock_service_config.return_value.create_configured_git_client.side_effect = GitRepositoryError("Git error")
@@ -316,32 +318,39 @@ class TestGitEndpoints:
 class TestStatusEndpoint:
     """Test the /api/v1/status endpoint."""
 
-    @patch("backend.api.endpoints.ServiceConfig")
-    def test_get_service_status_success(self, mock_service_config, client):
+    @patch("backend.api.routers.system.BaseServiceConfig")
+    @patch("backend.api.routers.system.ServiceClientCreators")
+    @patch("backend.api.routers.system.ServiceStatusCheckers")
+    def test_get_service_status_success(self, mock_status_checkers, mock_client_creators, mock_base_config, client):
         """Test successful service status retrieval."""
-        mock_service_config_instance = Mock()
-        mock_service_config.return_value = mock_service_config_instance
-
-        # Mock config status
-        mock_service_config_instance.get_service_status.return_value = {
+        # Mock status checkers
+        mock_status_instance = Mock()
+        mock_status_checkers.return_value = mock_status_instance
+        mock_status_instance.get_service_status.return_value = {
             "jenkins": {"configured": True},
             "github": {"configured": True},
             "ai": {"configured": True},
         }
 
+        # Mock client creators
+        mock_creators_instance = Mock()
+        mock_client_creators.return_value = mock_creators_instance
+
         # Mock Jenkins client
         mock_jenkins_client = Mock()
         mock_jenkins_client.is_connected.return_value = True
         mock_jenkins_client.url = FAKE_JENKINS_URL
-        mock_service_config_instance.create_configured_jenkins_client.return_value = mock_jenkins_client
+        mock_creators_instance.create_configured_jenkins_client.return_value = mock_jenkins_client
 
-        # Mock AI client
-        mock_service_config_instance.create_configured_ai_client.return_value = Mock()
+        # Mock AI client (just needs to not raise exception)
+        mock_creators_instance.create_configured_ai_client.return_value = Mock()
 
-        # Mock settings
+        # Mock base config
+        mock_base_instance = Mock()
+        mock_base_config.return_value = mock_base_instance
         mock_settings = Mock()
         mock_settings.last_updated = datetime.now()
-        mock_service_config_instance.get_settings.return_value = mock_settings
+        mock_base_instance.get_settings.return_value = mock_settings
 
         response = client.get("/api/v1/status")
 
@@ -352,7 +361,7 @@ class TestStatusEndpoint:
         assert data["services"]["jenkins"]["configured"] is True
         assert data["services"]["jenkins"]["available"] is True
 
-    @patch("backend.api.endpoints.ServiceConfig")
+    @patch("backend.api.routers.system.ServiceStatusCheckers")
     def test_get_service_status_jenkins_unavailable(self, mock_service_config, client):
         """Test service status when Jenkins is unavailable."""
         mock_service_config_instance = Mock()
@@ -382,11 +391,20 @@ class TestStatusEndpoint:
 class TestAIModelsEndpoints:
     """Test AI models endpoints."""
 
-    @patch("backend.api.endpoints.GeminiClient")
-    def test_get_gemini_models_success(self, mock_gemini_client, client):
+    @patch("backend.api.routers.ai.ServiceClientCreators")
+    def test_get_gemini_models_success(self, mock_service_client_creators, client):
         """Test successful Gemini models retrieval."""
-        mock_client_instance = Mock()
-        mock_gemini_client.return_value = mock_client_instance
+        # Mock the ServiceClientCreators instance
+        mock_creators_instance = Mock()
+        mock_service_client_creators.return_value = mock_creators_instance
+
+        # Mock the AI analyzer returned by create_configured_ai_client
+        mock_ai_analyzer = Mock()
+        mock_creators_instance.create_configured_ai_client.return_value = mock_ai_analyzer
+
+        # Mock the underlying GeminiClient and its response
+        mock_gemini_client = Mock()
+        mock_ai_analyzer.client = mock_gemini_client
 
         mock_response = GeminiModelsResponse(
             success=True,
@@ -404,20 +422,29 @@ class TestAIModelsEndpoints:
             total_count=1,
             message="Success",
         )
-        mock_client_instance.get_available_models.return_value = mock_response
+        mock_gemini_client.get_available_models.return_value = mock_response
 
-        response = client.post("/api/v1/ai/models", json={"api_key": FAKE_GEMINI_API_KEY})  # pragma: allowlist secret
+        response = client.post("/api/v1/ai/models?api_key=" + FAKE_GEMINI_API_KEY)  # pragma: allowlist secret
 
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
         assert len(data["models"]) == 1
 
-    @patch("backend.api.endpoints.GeminiClient")
-    def test_get_gemini_models_invalid_api_key(self, mock_gemini_client, client):
+    @patch("backend.api.routers.ai.ServiceClientCreators")
+    def test_get_gemini_models_invalid_api_key(self, mock_service_client_creators, client):
         """Test Gemini models retrieval with invalid API key."""
-        mock_client_instance = Mock()
-        mock_gemini_client.return_value = mock_client_instance
+        # Mock the ServiceClientCreators instance
+        mock_creators_instance = Mock()
+        mock_service_client_creators.return_value = mock_creators_instance
+
+        # Mock the AI analyzer returned by create_configured_ai_client
+        mock_ai_analyzer = Mock()
+        mock_creators_instance.create_configured_ai_client.return_value = mock_ai_analyzer
+
+        # Mock the underlying GeminiClient and its response
+        mock_gemini_client = Mock()
+        mock_ai_analyzer.client = mock_gemini_client
 
         mock_response = GeminiModelsResponse(
             success=False,
@@ -426,21 +453,27 @@ class TestAIModelsEndpoints:
             message="Authentication failed",
             error_details="Invalid API key",
         )
-        mock_client_instance.get_available_models.return_value = mock_response
+        mock_gemini_client.get_available_models.return_value = mock_response
 
-        response = client.post(
-            "/api/v1/ai/models",
-            json={"api_key": FAKE_INVALID_API_KEY},
-        )
+        response = client.post("/api/v1/ai/models?api_key=" + FAKE_INVALID_API_KEY)
 
         assert response.status_code == 401
         assert "Invalid API key" in response.json()["detail"]
 
-    @patch("backend.api.endpoints.GeminiClient")
-    def test_get_gemini_models_quota_exceeded(self, mock_gemini_client, client):
+    @patch("backend.api.routers.ai.ServiceClientCreators")
+    def test_get_gemini_models_quota_exceeded(self, mock_service_client_creators, client):
         """Test Gemini models retrieval with quota exceeded."""
-        mock_client_instance = Mock()
-        mock_gemini_client.return_value = mock_client_instance
+        # Mock the ServiceClientCreators instance
+        mock_creators_instance = Mock()
+        mock_service_client_creators.return_value = mock_creators_instance
+
+        # Mock the AI analyzer returned by create_configured_ai_client
+        mock_ai_analyzer = Mock()
+        mock_creators_instance.create_configured_ai_client.return_value = mock_ai_analyzer
+
+        # Mock the underlying GeminiClient and its response
+        mock_gemini_client = Mock()
+        mock_ai_analyzer.client = mock_gemini_client
 
         mock_response = GeminiModelsResponse(
             success=False,
@@ -449,22 +482,22 @@ class TestAIModelsEndpoints:
             message="quota exceeded",
             error_details="Rate limit exceeded",
         )
-        mock_client_instance.get_available_models.return_value = mock_response
+        mock_gemini_client.get_available_models.return_value = mock_response
 
-        response = client.post("/api/v1/ai/models", json={"api_key": FAKE_GEMINI_API_KEY})  # pragma: allowlist secret
+        response = client.post("/api/v1/ai/models?api_key=" + FAKE_GEMINI_API_KEY)  # pragma: allowlist secret
 
         assert response.status_code == 429
         assert "Rate limit exceeded" in response.json()["detail"]
 
-    @patch("backend.api.endpoints.GeminiClient")
-    def test_validate_gemini_api_key_success(self, mock_gemini_client, client):
+    @patch("backend.api.routers.ai.ServiceConnectionTesters")
+    def test_validate_gemini_api_key_success(self, mock_connection_testers, client):
         """Test successful API key validation."""
-        mock_client_instance = Mock()
-        mock_gemini_client.return_value = mock_client_instance
-        mock_client_instance.validate_api_key.return_value = True
+        mock_testers_instance = Mock()
+        mock_connection_testers.return_value = mock_testers_instance
+        mock_testers_instance.test_ai_connection.return_value = True
 
         response = client.post(
-            "/api/v1/ai/models/validate-key", json={"api_key": FAKE_GEMINI_API_KEY}
+            "/api/v1/ai/models/validate-key?api_key=" + FAKE_GEMINI_API_KEY
         )  # pragma: allowlist secret
 
         assert response.status_code == 200
@@ -472,17 +505,14 @@ class TestAIModelsEndpoints:
         assert data["valid"] is True
         assert "API key is valid" in data["message"]
 
-    @patch("backend.api.endpoints.GeminiClient")
-    def test_validate_gemini_api_key_invalid(self, mock_gemini_client, client):
+    @patch("backend.api.routers.ai.ServiceConnectionTesters")
+    def test_validate_gemini_api_key_invalid(self, mock_connection_testers, client):
         """Test API key validation with invalid key."""
-        mock_client_instance = Mock()
-        mock_gemini_client.return_value = mock_client_instance
-        mock_client_instance.validate_api_key.return_value = False
+        mock_testers_instance = Mock()
+        mock_connection_testers.return_value = mock_testers_instance
+        mock_testers_instance.test_ai_connection.side_effect = ConnectionError("Invalid API key")
 
-        response = client.post(
-            "/api/v1/ai/models/validate-key",
-            json={"api_key": FAKE_INVALID_API_KEY},
-        )
+        response = client.post("/api/v1/ai/models/validate-key?api_key=" + FAKE_INVALID_API_KEY)
 
         assert response.status_code == 401
         assert "Invalid API key" in response.json()["detail"]
@@ -491,7 +521,7 @@ class TestAIModelsEndpoints:
 class TestSettingsEndpoints:
     """Test settings-related endpoints."""
 
-    @patch("backend.api.endpoints.SettingsService")
+    @patch("backend.api.routers.settings.SettingsService")
     def test_get_settings_success(self, mock_settings_service, client):
         """Test successful settings retrieval."""
         mock_service_instance = Mock()
@@ -512,7 +542,7 @@ class TestSettingsEndpoints:
         assert "github" in data
         assert "ai" in data
 
-    @patch("backend.api.endpoints.SettingsService")
+    @patch("backend.api.routers.settings.SettingsService")
     def test_update_settings_success(self, mock_settings_service, client):
         """Test successful settings update."""
         mock_service_instance = Mock()
@@ -533,7 +563,7 @@ class TestSettingsEndpoints:
         data = response.json()
         assert data["jenkins"]["url"] == "https://new-jenkins.example.com"
 
-    @patch("backend.api.endpoints.SettingsService")
+    @patch("backend.api.routers.settings.SettingsService")
     def test_reset_settings_success(self, mock_settings_service, client):
         """Test successful settings reset."""
         mock_service_instance = Mock()
@@ -547,7 +577,7 @@ class TestSettingsEndpoints:
         assert response.status_code == 200
         mock_service_instance.reset_settings.assert_called_once()
 
-    @patch("backend.api.endpoints.SettingsService")
+    @patch("backend.api.routers.settings.SettingsService")
     def test_validate_settings_success(self, mock_settings_service, client):
         """Test successful settings validation."""
         mock_service_instance = Mock()
@@ -564,9 +594,9 @@ class TestSettingsEndpoints:
         assert "github" in data
         assert "ai" in data
 
-    @patch("backend.api.endpoints.SettingsService")
-    @patch("backend.api.endpoints.ServiceConfig")
-    def test_test_service_connection_jenkins_success(self, mock_service_config, mock_settings_service, client):
+    @patch("backend.api.routers.settings.SettingsService")
+    @patch("backend.api.routers.settings.ServiceConnectionTesters")
+    def test_test_service_connection_jenkins_success(self, mock_connection_testers, mock_settings_service, client):
         """Test successful Jenkins connection test."""
         mock_settings_instance = Mock()
         mock_settings_service.return_value = mock_settings_instance
@@ -578,8 +608,10 @@ class TestSettingsEndpoints:
         mock_settings.jenkins.verify_ssl = True
         mock_settings_instance.get_settings.return_value = mock_settings
 
-        mock_service_config_instance = Mock()
-        mock_service_config.return_value = mock_service_config_instance
+        mock_testers_instance = Mock()
+        mock_connection_testers.return_value = mock_testers_instance
+        # Mock the test_jenkins_connection method to not raise an exception
+        mock_testers_instance.test_jenkins_connection.return_value = None
 
         response = client.post("/api/v1/settings/test-connection", params={"service": "jenkins"})
 
@@ -588,9 +620,9 @@ class TestSettingsEndpoints:
         assert data["service"] == "jenkins"
         assert data["success"] is True
 
-    @patch("backend.api.endpoints.SettingsService")
-    @patch("backend.api.endpoints.ServiceConfig")
-    def test_test_service_connection_jenkins_failure(self, mock_service_config, mock_settings_service, client):
+    @patch("backend.api.routers.settings.SettingsService")
+    @patch("backend.api.routers.settings.ServiceConnectionTesters")
+    def test_test_service_connection_jenkins_failure(self, mock_connection_testers, mock_settings_service, client):
         """Test failed Jenkins connection test."""
         mock_settings_instance = Mock()
         mock_settings_service.return_value = mock_settings_instance
@@ -602,9 +634,9 @@ class TestSettingsEndpoints:
         mock_settings.jenkins.verify_ssl = True
         mock_settings_instance.get_settings.return_value = mock_settings
 
-        mock_service_config_instance = Mock()
-        mock_service_config.return_value = mock_service_config_instance
-        mock_service_config_instance.test_jenkins_connection.side_effect = ConnectionError("Connection failed")
+        mock_testers_instance = Mock()
+        mock_connection_testers.return_value = mock_testers_instance
+        mock_testers_instance.test_jenkins_connection.side_effect = ConnectionError("Connection failed")
 
         response = client.post("/api/v1/settings/test-connection", params={"service": "jenkins"})
 
@@ -621,11 +653,13 @@ class TestSettingsEndpoints:
         assert response.status_code == 400
         assert "Unknown service" in response.json()["detail"]
 
-    @patch("backend.api.endpoints.ServiceConfig")
-    def test_test_service_connection_with_config_success(self, mock_service_config, client):
+    @patch("backend.api.routers.settings.ServiceConnectionTesters")
+    def test_test_service_connection_with_config_success(self, mock_connection_testers, client):
         """Test successful connection test with custom config."""
-        mock_service_config_instance = Mock()
-        mock_service_config.return_value = mock_service_config_instance
+        mock_testers_instance = Mock()
+        mock_connection_testers.return_value = mock_testers_instance
+        # Mock the test_jenkins_connection method to not raise an exception
+        mock_testers_instance.test_jenkins_connection.return_value = None
 
         request_data = {
             "service": "jenkins",
@@ -644,7 +678,7 @@ class TestSettingsEndpoints:
         assert data["service"] == "jenkins"
         assert data["success"] is True
 
-    @patch("backend.api.endpoints.SettingsService")
+    @patch("backend.api.routers.settings.SettingsService")
     def test_backup_settings_success(self, mock_settings_service, client):
         """Test successful settings backup."""
         mock_service_instance = Mock()
@@ -663,7 +697,7 @@ class TestSettingsEndpoints:
         assert response.headers["content-type"] == "application/json"
         assert "attachment" in response.headers.get("content-disposition", "")
 
-    @patch("backend.api.endpoints.SettingsService")
+    @patch("backend.api.routers.settings.SettingsService")
     def test_restore_settings_success(self, mock_settings_service, client):
         """Test successful settings restore."""
         mock_service_instance = Mock()
@@ -721,7 +755,7 @@ class TestEndpointValidation:
     def test_jenkins_builds_invalid_limit(self, client):
         """Test Jenkins builds with invalid limit parameter."""
         response = client.get("/api/v1/jenkins/test-job/builds?limit=-1")
-        assert response.status_code == 500  # Service error due to lack of input validation
+        assert response.status_code == 503  # Service unavailable because Jenkins not configured
 
     def test_jenkins_console_invalid_build_number(self, client):
         """Test Jenkins console with invalid build number."""
@@ -753,7 +787,7 @@ class TestEndpointValidation:
 class TestEndpointErrorHandling:
     """Test comprehensive error handling across endpoints."""
 
-    @patch("backend.api.endpoints.ServiceConfig")
+    @patch("backend.api.routers.jenkins.ServiceClientCreators")
     def test_jenkins_jobs_service_exception(self, mock_service_config, client):
         """Test Jenkins jobs endpoint with service exception."""
         mock_jenkins_client = Mock()
@@ -766,7 +800,7 @@ class TestEndpointErrorHandling:
         assert response.status_code == 500
         assert "Failed to fetch Jenkins jobs" in response.json()["detail"]
 
-    @patch("backend.api.endpoints.ServiceConfig")
+    @patch("backend.api.routers.jenkins.ServiceClientCreators")
     def test_jenkins_builds_service_exception(self, mock_service_config, client):
         """Test Jenkins builds endpoint with service exception."""
         mock_jenkins_client = Mock()
@@ -779,7 +813,7 @@ class TestEndpointErrorHandling:
         assert response.status_code == 500
         assert "Failed to get job builds" in response.json()["detail"]
 
-    @patch("backend.api.endpoints.ServiceConfig")
+    @patch("backend.api.routers.jenkins.ServiceClientCreators")
     def test_jenkins_console_service_exception(self, mock_service_config, client):
         """Test Jenkins console endpoint with service exception."""
         mock_jenkins_client = Mock()
@@ -792,7 +826,7 @@ class TestEndpointErrorHandling:
         assert response.status_code == 500
         assert "Failed to get console output" in response.json()["detail"]
 
-    @patch("backend.api.endpoints.ServiceConfig")
+    @patch("backend.api.routers.git.ServiceClientCreators")
     def test_git_clone_service_exception(self, mock_service_config, client):
         """Test git clone endpoint with service exception."""
         mock_service_config.return_value.create_configured_git_client.side_effect = Exception("Service error")
@@ -817,17 +851,17 @@ class TestEndpointErrorHandling:
         assert response.status_code == 500
         assert "Failed to get file content" in response.json()["detail"]
 
-    @patch("backend.api.endpoints.GeminiClient")
-    def test_gemini_models_service_exception(self, mock_gemini_client, client):
+    @patch("backend.api.routers.ai.ServiceClientCreators")
+    def test_gemini_models_service_exception(self, mock_service_client_creators, client):
         """Test Gemini models endpoint with service exception."""
-        mock_gemini_client.side_effect = Exception("Service error")
+        mock_service_client_creators.side_effect = Exception("Service error")
 
-        response = client.post("/api/v1/ai/models", json={"api_key": FAKE_GEMINI_API_KEY})  # pragma: allowlist secret
+        response = client.post("/api/v1/ai/models?api_key=" + FAKE_GEMINI_API_KEY)  # pragma: allowlist secret
 
         assert response.status_code == 500
         assert "Failed to fetch Gemini models" in response.json()["detail"]
 
-    @patch("backend.api.endpoints.SettingsService")
+    @patch("backend.api.routers.settings.SettingsService")
     def test_settings_get_exception(self, mock_settings_service, client):
         """Test settings get endpoint with service exception."""
         mock_settings_service.side_effect = Exception("Settings error")
@@ -837,7 +871,7 @@ class TestEndpointErrorHandling:
         assert response.status_code == 500
         assert "Failed to retrieve settings" in response.json()["detail"]
 
-    @patch("backend.api.endpoints.SettingsService")
+    @patch("backend.api.routers.settings.SettingsService")
     def test_settings_update_exception(self, mock_settings_service, client):
         """Test settings update endpoint with service exception."""
         mock_service_instance = Mock()
