@@ -357,3 +357,34 @@ class TestSecurityUtilityFunctions:
         assert secure_compare("", "") is True
         assert secure_compare("test", "") is False
         assert secure_compare("", "test") is False
+
+
+class TestValidatorErrorPaths:
+    """Test error handling paths in validators."""
+
+    def test_github_token_invalid_sanitization(self):
+        """Test GitHub token validation with invalid token that fails sanitization."""
+        validator = SettingsValidator()
+
+        # Mock InputSanitizer to raise ValueError
+        with patch.object(InputSanitizer, "sanitize_token", side_effect=ValueError("Invalid token format")):
+            errors = validator.validate_github_token("invalid<>token")
+            assert "Invalid token format" in errors
+
+    def test_gemini_api_key_invalid_sanitization(self):
+        """Test Gemini API key validation with invalid key that fails sanitization."""
+        validator = SettingsValidator()
+
+        # Mock InputSanitizer to raise ValueError
+        with patch.object(InputSanitizer, "sanitize_token", side_effect=ValueError("Invalid API key format")):
+            errors = validator.validate_gemini_api_key("invalid<>key")
+            assert "Invalid API key format" in errors
+
+    def test_validate_jenkins_url_localhost_warning(self):
+        """Test Jenkins URL validation with localhost (should pass through)."""
+        validator = SettingsValidator()
+
+        # This should trigger the localhost detection but not add errors
+        errors = validator.validate_jenkins_url("http://localhost:8080")
+        # Should have HTTP warning but localhost detection just passes
+        assert any("HTTP URLs are not secure" in error for error in errors)
