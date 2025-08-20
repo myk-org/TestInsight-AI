@@ -27,7 +27,7 @@ interface TestableFormData {
   };
   ai: {
     gemini_api_key?: string;
-    gemini_model: string;
+    model: string;
     temperature: number;
     max_tokens: number;
   };
@@ -56,15 +56,15 @@ const Settings: React.FC = () => {
   const [canSave, setCanSave] = useState(false);
 
   // Get active tab from URL, default to 'jenkins'
-  const getActiveTabFromUrl = (): 'jenkins' | 'github' | 'ai' | 'preferences' => {
+  const getActiveTabFromUrl = (): 'jenkins' | 'github' | 'ai' => {
     const tab = searchParams.get('tab');
-    if (tab && ['jenkins', 'github', 'ai', 'preferences'].includes(tab)) {
-      return tab as 'jenkins' | 'github' | 'ai' | 'preferences';
+    if (tab && ['jenkins', 'github', 'ai'].includes(tab)) {
+      return tab as 'jenkins' | 'github' | 'ai';
     }
     return 'jenkins';
   };
 
-  const [activeTab, setActiveTab] = useState<'jenkins' | 'github' | 'ai' | 'preferences'>(getActiveTabFromUrl());
+  const [activeTab, setActiveTab] = useState<'jenkins' | 'github' | 'ai'>(getActiveTabFromUrl());
 
   // AI models state
   const [availableModels, setAvailableModels] = useState<any[]>([]);
@@ -72,6 +72,8 @@ const Settings: React.FC = () => {
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [apiKeyValidating, setApiKeyValidating] = useState(false);
+  const [userEnteredNewApiKey, setUserEnteredNewApiKey] = useState(false);
+
 
   // File upload state for restore
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
@@ -99,20 +101,36 @@ const Settings: React.FC = () => {
   // Initialize form data when settings are loaded
   useEffect(() => {
     if (settings) {
-      // Ensure AI settings have valid default values
+      // Clear masked values from sensitive fields for form display
       const validatedSettings = {
         ...settings,
+        jenkins: {
+          ...settings.jenkins,
+          // Clear masked API token so placeholder shows
+          api_token: settings.jenkins.api_token?.includes('...') ? '' : settings.jenkins.api_token,
+        },
+        github: {
+          ...settings.github,
+          // Clear masked token so placeholder shows
+          token: settings.github.token?.includes('...') ? '' : settings.github.token,
+        },
         ai: {
           ...settings.ai,
-          // Ensure gemini_model is never empty/null
-          gemini_model: settings.ai.gemini_model || 'gemini-pro',
+          // Clear masked API key so placeholder shows
+          gemini_api_key: settings.ai.gemini_api_key?.includes('...') ? '' : settings.ai.gemini_api_key,
+          // Keep model as provided in settings
+          model: settings.ai.model || '',
         }
       };
       setFormData(validatedSettings);
       setOriginalSettings(validatedSettings);
+
+
       // Reset connection status and save capability when settings change
       setConnectionStatus({});
       setCanSave(false);
+      setUserEnteredNewApiKey(false);
+
     }
   }, [settings]);
 
@@ -168,7 +186,7 @@ const Settings: React.FC = () => {
       }
     }
 
-    // If no services are configured, allow saving (preferences only changes)
+    // If no services are configured, allow saving
     if (configuredServices.length === 0) {
       setCanSave(true);
       return;
@@ -188,6 +206,7 @@ const Settings: React.FC = () => {
 
     setCanSave(hasSuccessfulTest);
   }, [formData, connectionStatus, secretsStatus, originalSettings]);
+
 
   // Utility function to check if any changes have been made to the form
   const hasFormChanges = (): boolean => {
@@ -210,17 +229,13 @@ const Settings: React.FC = () => {
     }
 
     // AI changes
-    if (formData.ai.gemini_model !== originalSettings.ai.gemini_model ||
+    if (formData.ai.model !== originalSettings.ai.model ||
         formData.ai.temperature !== originalSettings.ai.temperature ||
         formData.ai.max_tokens !== originalSettings.ai.max_tokens ||
         (formData.ai.gemini_api_key && formData.ai.gemini_api_key.trim() !== '')) {
       return true;
     }
 
-    // Preferences changes
-    if (formData.preferences.theme !== originalSettings.preferences.theme) {
-      return true;
-    }
 
     return false;
   };
@@ -231,14 +246,17 @@ const Settings: React.FC = () => {
   };
 
   // Handle tab change with URL update
-  const handleTabChange = (tab: 'jenkins' | 'github' | 'ai' | 'preferences') => {
+  const handleTabChange = (tab: 'jenkins' | 'github' | 'ai') => {
     setActiveTab(tab);
     setSearchParams({ tab });
   };
 
   // Handle refresh models button click
-  const handleRefreshModels = async () => {
-    if (!secretsStatus?.ai?.gemini_api_key) {
+  const handleRefreshModels = useCallback(async () => {
+    // Check if API key is configured
+    const hasApiKey = Boolean(formData?.ai?.gemini_api_key || secretsStatus?.ai?.gemini_api_key);
+
+    if (!hasApiKey) {
       setModelsError('No API key configured. Please configure and test your AI connection first.');
       return;
     }
@@ -247,8 +265,83 @@ const Settings: React.FC = () => {
     setModelsError(null);
 
     try {
-      // We cannot fetch models without an API key, so show appropriate message
-      throw new Error('Cannot refresh models without re-entering API key. Please test connection with your API key first.');
+      let modelsResult;
+
+      // Determine if we have form data to test with
+      const hasFormData = Boolean(formData?.ai?.gemini_api_key);
+
+      if (hasFormData) {
+        // Use form data to refresh models - test with current form values
+        const aiConfig = {
+          gemini_api_key: formData?.ai?.gemini_api_key || '',
+          model: formData?.ai?.model || '',
+          temperature: formData?.ai?.temperature || 0.7,
+          max_tokens: formData?.ai?.max_tokens || 4096
+        };
+
+        try {
+          const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/v1/settings/test-connection-with-config`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              service: 'ai',
+              config: aiConfig
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          const result = await response.json();
+          modelsResult = {
+            success: result.success,
+            models: result.models || [],
+            error: result.error_details || result.message
+          };
+        } catch (error) {
+          modelsResult = {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to fetch models'
+          };
+        }
+      } else {
+        // Use backend endpoint to fetch models with saved settings
+        try {
+          const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/v1/ai/models`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          const result = await response.json();
+          modelsResult = {
+            success: result.success,
+            models: result.models,
+            error: result.error_details || result.message
+          };
+        } catch (error) {
+          modelsResult = {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to fetch models'
+          };
+        }
+      }
+
+      if (modelsResult.success && modelsResult.models) {
+        setAvailableModels(modelsResult.models);
+        setModelsError(null);
+      } else {
+        setModelsError(modelsResult.error || 'Failed to fetch models');
+        setAvailableModels([]);
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to refresh models';
       setModelsError(errorMessage);
@@ -256,7 +349,18 @@ const Settings: React.FC = () => {
     } finally {
       setModelsLoading(false);
     }
-  };
+  }, [formData, secretsStatus]);
+
+  // Auto-load models when settings are initialized with valid API key
+  useEffect(() => {
+    if (formData && secretsStatus && activeTab === 'ai') {
+      const hasApiKey = Boolean(formData.ai.gemini_api_key || secretsStatus?.ai?.gemini_api_key);
+      if (hasApiKey && availableModels.length === 0 && !modelsLoading) {
+        // Auto-refresh models when on AI tab with valid API key but no models loaded
+        handleRefreshModels();
+      }
+    }
+  }, [formData, secretsStatus, activeTab, availableModels.length, modelsLoading, handleRefreshModels]);
 
   // Helper function to safely convert any value to string for error display
   const getErrorMessage = (error: any): string => {
@@ -330,7 +434,6 @@ const Settings: React.FC = () => {
       errors['ai.max_tokens'] = 'Max tokens must be between 1 and 32768';
     }
 
-    // Preferences validation - no additional validation needed currently
 
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
@@ -373,7 +476,10 @@ const Settings: React.FC = () => {
         newStatus.github = { ...newStatus.github, tested: false, result: undefined };
       } else if (section === 'ai' && newStatus.ai) {
         // Only clear connection status when API key changes, not when model selection changes
-        if (field === 'gemini_api_key') {
+        if (field === 'gemini_api_key' && value && value.trim() !== '') {
+          // Mark that user entered a new API key
+          setUserEnteredNewApiKey(true);
+          // Only clear models if a new non-empty API key is being entered
           newStatus.ai = { ...newStatus.ai, tested: false, result: undefined };
           setAvailableModels([]);
           setModelsError(null);
@@ -398,7 +504,6 @@ const Settings: React.FC = () => {
         jenkins: formData.jenkins,
         github: formData.github,
         ai: formData.ai,
-        preferences: formData.preferences,
       };
 
       await updateSettings(update);
@@ -414,6 +519,49 @@ const Settings: React.FC = () => {
       } catch (error) {
         console.error('Failed to refresh secrets status:', error);
       }
+
+      // Preserve successful connection status for services that were already tested and didn't change API keys
+      setConnectionStatus(prev => {
+        const newStatus = { ...prev };
+
+        // If AI connection was successful and we didn't change the API key, preserve the status
+        if (prev.ai?.result?.success && !formData.ai.gemini_api_key) {
+          // No new API key entered in form, so we kept the existing one - preserve connection status
+          newStatus.ai = { ...prev.ai, tested: true, result: { ...prev.ai.result } };
+        }
+
+        // Similar logic for other services if needed
+        if (prev.jenkins?.result?.success && !formData.jenkins.api_token) {
+          newStatus.jenkins = { ...prev.jenkins, tested: true, result: { ...prev.jenkins.result } };
+        }
+
+        if (prev.github?.result?.success && !formData.github.token) {
+          newStatus.github = { ...prev.github, tested: true, result: { ...prev.github.result } };
+        }
+
+        return newStatus;
+      });
+
+      // Preserve available models and connection status after save
+      // Store them temporarily to restore after settings refresh
+      const savedModels = availableModels;
+      const savedConnectionStatus = connectionStatus;
+      const savedModelsError = modelsError;
+
+      // Set a flag to indicate we just saved, so we can restore state after settings reload
+      setTimeout(() => {
+        if (savedModels.length > 0 && !userEnteredNewApiKey) {
+          // Restore models if they existed and user didn't enter a new API key
+          setAvailableModels(savedModels);
+          setModelsError(savedModelsError);
+          setConnectionStatus(prev => ({
+            ...prev,
+            ai: savedConnectionStatus.ai || prev.ai
+          }));
+        }
+        // Reset the flag after restoration
+        setUserEnteredNewApiKey(false);
+      }, 100); // Small delay to let settings reload complete
     } catch (err) {
       // Error is handled by the context - additional safety check
       if (err && typeof err === 'object' && 'message' in err && typeof (err as any).message === 'string') {
@@ -465,7 +613,7 @@ const Settings: React.FC = () => {
       } else if (service === 'ai') {
         result = await testAIConnection({
           gemini_api_key: formData.ai.gemini_api_key || '',
-          gemini_model: formData.ai.gemini_model,
+          model: formData.ai.model,
           temperature: formData.ai.temperature,
           max_tokens: formData.ai.max_tokens
         });
@@ -591,13 +739,15 @@ const Settings: React.FC = () => {
   };
 
   const testAIConnection = async (aiConfig: TestableFormData['ai']): Promise<ConnectionTestResult> => {
-    // If no API key in form, use existing settings
-    if (!aiConfig.gemini_api_key && !secretsStatus?.ai?.gemini_api_key) {
+    // Check if API key is configured
+    const hasApiKey = Boolean(aiConfig.gemini_api_key || secretsStatus?.ai?.gemini_api_key);
+
+    if (!hasApiKey) {
       return {
         service: 'ai',
         success: false,
-        message: 'Gemini API key is required',
-        error_details: 'Please enter a Google Gemini API key or configure it first'
+        message: 'AI authentication required',
+        error_details: 'Please configure Google Gemini API key'
       };
     }
 
@@ -607,9 +757,46 @@ const Settings: React.FC = () => {
         error: 'Not tested'
       };
 
-      if (aiConfig.gemini_api_key) {
-        // Test with new API key from form
-        modelsResult = await fetchModelsWithApiKey(aiConfig.gemini_api_key);
+      // Determine if we're testing with form data or existing settings
+      const testingWithFormData = Boolean(aiConfig.gemini_api_key);
+
+      if (testingWithFormData) {
+        // Test with form data using the test-connection-with-config endpoint
+        const aiFormData = {
+          gemini_api_key: aiConfig.gemini_api_key || '',
+          model: aiConfig.model,
+          temperature: aiConfig.temperature,
+          max_tokens: aiConfig.max_tokens
+        };
+
+        try {
+          const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/v1/settings/test-connection-with-config`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              service: 'ai',
+              config: aiFormData
+            }),
+          });
+
+          const result = await response.json();
+          if (!response.ok) {
+            throw new Error(result.detail || `HTTP ${response.status}`);
+          }
+
+          modelsResult = {
+            success: result.success,
+            models: result.models || [],
+            error: result.error_details || result.message
+          };
+        } catch (error) {
+          modelsResult = {
+            success: false,
+            error: error instanceof Error ? error.message : 'Connection test failed'
+          };
+        }
       } else {
         // Test with existing configured settings (use backend endpoint)
         try {
@@ -625,15 +812,11 @@ const Settings: React.FC = () => {
             throw new Error(result.detail || `HTTP ${response.status}`);
           }
 
-          if (result.success) {
-            // Connection test passed, but no models without API key
-            modelsResult = {
-              success: true,
-              models: []
-            };
-          } else {
-            return result;
-          }
+          modelsResult = {
+            success: result.success,
+            models: result.models || [],
+            error: result.error_details || result.message
+          };
         } catch (error) {
           return {
             service: 'ai',
@@ -651,14 +834,14 @@ const Settings: React.FC = () => {
 
         // Update model if current selection is not available
         const modelNames = modelsResult.models.map((model: any) => model.name);
-        if (!modelNames.includes(aiConfig.gemini_model) && modelsResult.models.length > 0) {
+        if (!modelNames.includes(aiConfig.model) && modelsResult.models.length > 0) {
           setFormData(prev => {
             if (!prev) return null;
             return {
               ...prev,
               ai: {
                 ...prev.ai,
-                gemini_model: modelsResult.models![0].name,
+                model: modelsResult.models![0].name,
               },
             };
           });
@@ -904,7 +1087,6 @@ const Settings: React.FC = () => {
                 { id: 'jenkins', label: 'Jenkins', icon: '🔧' },
                 { id: 'github', label: 'GitHub', icon: '🐙' },
                 { id: 'ai', label: 'AI', icon: '🤖' },
-                { id: 'preferences', label: 'Preferences', icon: '⚙️' },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -1086,6 +1268,7 @@ const Settings: React.FC = () => {
                     AI Configuration
                   </h3>
                   <div className="grid grid-cols-1 gap-6">
+                    {/* API Key Field */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                         Google Gemini API Key
@@ -1125,8 +1308,8 @@ const Settings: React.FC = () => {
                       <div className="flex gap-2">
                         <div className="relative flex-1">
                           <select
-                            value={formData.ai.gemini_model}
-                            onChange={(e) => handleInputChange('ai', 'gemini_model', e.target.value)}
+                            value={formData.ai.model}
+                            onChange={(e) => handleInputChange('ai', 'model', e.target.value)}
                             disabled={!availableModels.length || modelsLoading}
                             className={`mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:border-primary-500 focus:ring-primary-500 ${
                               (!availableModels.length || modelsLoading) ? 'opacity-50 cursor-not-allowed' : ''
@@ -1153,9 +1336,17 @@ const Settings: React.FC = () => {
                         <button
                           type="button"
                           onClick={handleRefreshModels}
-                          disabled={!secretsStatus?.ai?.gemini_api_key || modelsLoading}
+                          disabled={
+                            // Disabled if no API key is configured OR loading
+                            (!formData?.ai?.gemini_api_key?.trim() && !secretsStatus?.ai?.gemini_api_key) ||
+                            modelsLoading
+                          }
                           className="mt-1 px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                          title={!secretsStatus?.ai?.gemini_api_key ? 'Configure and save AI settings first' : 'Refresh available models'}
+                          title={
+                            (!formData?.ai?.gemini_api_key?.trim() && !secretsStatus?.ai?.gemini_api_key)
+                              ? 'Configure your API key first'
+                              : 'Refresh available models'
+                          }
                         >
                           {modelsLoading ? 'Loading...' : 'Refresh Models'}
                         </button>
@@ -1221,7 +1412,11 @@ const Settings: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => handleTestConnection('ai')}
-                        disabled={(!formData.ai.gemini_api_key && !secretsStatus?.ai?.gemini_api_key) || connectionStatus.ai?.testing}
+                        disabled={
+                          // Disabled if no API key is configured OR currently testing
+                          (!formData.ai.gemini_api_key?.trim() && !secretsStatus?.ai?.gemini_api_key) ||
+                          connectionStatus.ai?.testing
+                        }
                         className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {connectionStatus.ai?.testing ? 'Testing...' : 'Test Connection'}
@@ -1233,34 +1428,6 @@ const Settings: React.FC = () => {
               </div>
             )}
 
-            {/* Preferences Tab */}
-            {activeTab === 'preferences' && (
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-                    User Preferences
-                  </h3>
-                  <div className="grid grid-cols-1 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Theme
-                      </label>
-                      <select
-                        value={formData.preferences.theme}
-                        onChange={(e) => handleInputChange('preferences', 'theme', e.target.value)}
-                        className="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:border-primary-500 focus:ring-primary-500"
-                      >
-                        <option value="light">Light</option>
-                        <option value="dark">Dark</option>
-                        <option value="system">System</option>
-                      </select>
-                    </div>
-
-
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* Submit Button */}
             <div className="pt-6 border-t border-gray-200 dark:border-gray-700">

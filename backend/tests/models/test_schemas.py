@@ -266,7 +266,7 @@ class TestTestConnectionWithParamsRequest:
             service="ai",
             config={
                 "gemini_api_key": FAKE_GEMINI_API_KEY,
-                "gemini_model": "gemini-1.5-pro",
+                "model": "gemini-1.5-pro",
             },
         )
         assert request.service == "ai"

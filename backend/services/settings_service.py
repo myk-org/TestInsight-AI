@@ -66,9 +66,6 @@ class SettingsService:
         if update.ai is not None:
             update_data["ai"] = update.ai.model_dump()
 
-        if update.preferences is not None:
-            update_data["preferences"] = update.preferences.model_dump()
-
         # Add timestamp
         update_data["last_updated"] = datetime.now()
 
@@ -159,7 +156,9 @@ class SettingsService:
         return {
             "jenkins": {"api_token": bool(settings.jenkins.api_token and settings.jenkins.api_token.strip())},
             "github": {"token": bool(settings.github.token and settings.github.token.strip())},
-            "ai": {"gemini_api_key": bool(settings.ai.gemini_api_key and settings.ai.gemini_api_key.strip())},
+            "ai": {
+                "gemini_api_key": bool(settings.ai.gemini_api_key and settings.ai.gemini_api_key.strip()),
+            },
         }
 
     def validate_settings(self) -> dict[str, list[str]]:
@@ -195,6 +194,8 @@ class SettingsService:
 
         # Validate AI settings
         ai_errors = []
+
+        # Validate API key format if provided
         if settings.ai.gemini_api_key:
             ai_errors.extend(SettingsValidator.validate_gemini_api_key(settings.ai.gemini_api_key))
 

@@ -86,7 +86,7 @@ class AIAnalyzer:
 
         Return ONLY a JSON array of objects. Each object must have these exact fields:
         {{
-            "title": "Issue/Pattern Title",
+          "title": "Issue/Pattern Title",
           "description": "Detailed description",
           "severity": "LOW|MEDIUM|HIGH|CRITICAL",
           "category": "Performance|Reliability|Code Quality|Infrastructure|Testing",
@@ -96,11 +96,9 @@ class AIAnalyzer:
 
         Focus on:
         1. Failed tests and their root causes
-        2. Performance issues and slow tests
-        3. Build failures and error patterns
-        4. Code quality concerns
-        5. Infrastructure or environment issues
-        6. Testing strategy improvements
+        2. Build failures and error patterns
+        3. Infrastructure or environment issues
+        4. Testing strategy improvements
         """
 
         result = self.client.generate_content(prompt)
@@ -124,24 +122,15 @@ class AIAnalyzer:
         Returns:
             Summary text
         """
-        # Limit context to 1000 characters
-        truncated_context = context[:1000]
-        if len(context) > 1000:
-            truncated_context += "..."
-
-        # Limit insights to first 5
-        limited_insights = insights[:5]
 
         prompt = f"""
         Based on the following test analysis context and insights, provide a concise summary of the overall situation.
 
         Context:
-        {truncated_context}
+        {context}
 
         Key Insights:
-        {self._format_insights_for_prompt(limited_insights)}
-
-        Provide a brief 2-3 sentence summary highlighting the most important findings.
+        {self._format_insights_for_prompt(insights)}
         """
 
         result = self.client.generate_content(prompt)
@@ -160,24 +149,16 @@ class AIAnalyzer:
         Returns:
             List of recommendations
         """
-        # Limit context to 500 characters
-        truncated_context = context[:500]
-        if len(context) > 500:
-            truncated_context += "..."
-
-        # Limit insights to first 3
-        limited_insights = insights[:3]
-
         prompt = f"""
         Based on the analysis context and insights, provide specific, actionable recommendations.
 
         Context Summary:
-        {truncated_context}
+        {context}
 
         Top Insights:
-        {self._format_insights_for_prompt(limited_insights)}
+        {self._format_insights_for_prompt(insights)}
 
-        Return ONLY a JSON array of strings, no other text. Example format:
+        Return ONLY a List array of strings, no other text. Example format:
         ["Recommendation 1", "Recommendation 2", "Recommendation 3", "Additional recommendations as needed"]
         """
         result = self.client.generate_content(prompt)
@@ -188,7 +169,7 @@ class AIAnalyzer:
             return json.loads(result["content"].strip())
         except json.JSONDecodeError:
             # Fallback if AI doesn't follow format
-            return ["Review test failures manually", "Check configuration", "Analyze error patterns"]
+            return []
 
     def _create_insight_from_dict(self, data: dict[str, Any]) -> AIInsight:
         """Create AIInsight from parsed data.

@@ -184,7 +184,7 @@ async def analyze_jenkins_build(
 
         # Get console output from Jenkins
         if final_build_number:
-            console_output = jenkins_client.get_console_output(job_name, final_build_number)
+            test_report = jenkins_client.get_build_test_report(job_name, final_build_number)
         else:
             # Get latest build
             builds = jenkins_client.get_job_builds(job_name, 1)
@@ -194,9 +194,9 @@ async def analyze_jenkins_build(
             final_build_number = latest_build.get("number")
             if final_build_number is None:
                 raise HTTPException(status_code=404, detail=f"Latest build for job {job_name} has no build number")
-            console_output = jenkins_client.get_console_output(job_name, final_build_number)
+            test_report = jenkins_client.get_build_test_report(job_name, final_build_number)
 
-        if console_output is None:
+        if test_report is None:
             raise HTTPException(status_code=404, detail=f"Console output not found for build {final_build_number}")
 
         # Build context
@@ -210,7 +210,7 @@ async def analyze_jenkins_build(
         if not ai_analyzer:
             raise HTTPException(status_code=503, detail="AI analyzer not configured")
 
-        request = AnalysisRequest(text=console_output, custom_context=final_context)
+        request = AnalysisRequest(text=test_report, custom_context=final_context)
         analysis = ai_analyzer.analyze_test_results(request)
 
         return AnalysisResponse(

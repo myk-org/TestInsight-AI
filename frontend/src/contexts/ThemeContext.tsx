@@ -24,7 +24,7 @@ interface ThemeProviderProps {
 }
 
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
-  const [theme, setThemeState] = useState<Theme>('system');
+  const [theme, setThemeState] = useState<Theme>('dark');
   const [actualTheme, setActualTheme] = useState<'light' | 'dark'>('light');
 
   // Get system preference
@@ -35,7 +35,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   // Get stored theme from localStorage
   const getStoredTheme = (): Theme => {
     const stored = localStorage.getItem('theme') as Theme;
-    return ['light', 'dark', 'system'].includes(stored) ? stored : 'system';
+    return ['light', 'dark', 'system'].includes(stored) ? stored : 'dark';
   };
 
   // Calculate actual theme based on preference

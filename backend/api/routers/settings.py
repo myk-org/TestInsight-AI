@@ -155,9 +155,7 @@ async def test_service_connection(service: str) -> ConnectionTestResult:
 
         elif service == "ai":
             try:
-                connection_testers.test_ai_connection(
-                    api_key=settings.ai.gemini_api_key or "",
-                )
+                connection_testers.test_ai_connection()
                 return ConnectionTestResult(
                     service="ai",
                     success=True,
@@ -241,9 +239,7 @@ async def test_service_connection_with_config(request: TestConnectionWithParamsR
 
         elif service == "ai":
             try:
-                connection_testers.test_ai_connection(
-                    api_key=config.get("gemini_api_key", ""),
-                )
+                connection_testers.test_ai_connection_with_config(config)
                 return ConnectionTestResult(
                     service="ai",
                     success=True,

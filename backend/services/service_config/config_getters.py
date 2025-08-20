@@ -41,22 +41,7 @@ class ServiceConfigGetters(BaseServiceConfig):
 
         return {
             "api_key": settings.ai.gemini_api_key or "",
-            "model": settings.ai.gemini_model.value if settings.ai.gemini_model else "",
+            "model": settings.ai.model or "",
             "temperature": settings.ai.temperature,
             "max_tokens": settings.ai.max_tokens,
-        }
-
-    def get_user_preferences(self) -> dict[str, str | bool | int]:
-        """Get user preferences.
-
-        Returns:
-            Dictionary with user preferences
-        """
-        settings = self.get_settings()
-
-        return {
-            "theme": settings.preferences.theme,
-            "language": settings.preferences.language,
-            "auto_refresh": settings.preferences.auto_refresh,
-            "results_per_page": settings.preferences.results_per_page,
         }

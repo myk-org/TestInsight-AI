@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
 class TestStatus(str, Enum):
@@ -134,15 +134,6 @@ class ErrorResponse(BaseModel):
     code: str | None = Field(None, description="Error code")
 
 
-class GeminiModel(str, Enum):
-    """Available Gemini models."""
-
-    GEMINI_PRO = "gemini-pro"
-    GEMINI_PRO_VISION = "gemini-pro-vision"
-    GEMINI_1_5_PRO = "gemini-1.5-pro"
-    GEMINI_1_5_FLASH = "gemini-1.5-flash"
-
-
 class JenkinsSettings(BaseModel):
     """Jenkins connection settings."""
 
@@ -162,44 +153,9 @@ class AISettings(BaseModel):
     """AI service settings."""
 
     gemini_api_key: str | None = Field(None, description="Google Gemini API key")
-    gemini_model: GeminiModel = Field(GeminiModel.GEMINI_PRO, description="Gemini model to use")
+    model: str = Field("", description="Gemini model to use")
     temperature: float = Field(0.7, ge=0.0, le=2.0, description="AI temperature setting")
     max_tokens: int = Field(4096, ge=1, le=32768, description="Maximum tokens for AI responses")
-
-    @field_validator("gemini_model", mode="before")
-    @classmethod
-    def validate_gemini_model(cls, v: str | None) -> str:
-        """Handle empty/null/invalid model values by using default or cleaning them."""
-        if v is None or v == "" or (isinstance(v, str) and v.strip() == ""):
-            return GeminiModel.GEMINI_PRO.value
-
-        # Handle models with 'models/' prefix from Google API
-        if isinstance(v, str) and v.startswith("models/"):
-            model_name = v.replace("models/", "")
-            # Check if the cleaned model name is valid
-            valid_models = [model.value for model in GeminiModel]
-            if model_name in valid_models:
-                return model_name
-            # If the cleaned name is still invalid, use default
-            return GeminiModel.GEMINI_PRO.value
-
-        # Check if the value is a valid enum value
-        if isinstance(v, str):
-            valid_models = [model.value for model in GeminiModel]
-            if v not in valid_models:
-                # If invalid model name, fall back to default instead of failing
-                return GeminiModel.GEMINI_PRO.value
-
-        return v
-
-
-class UserPreferences(BaseModel):
-    """User interface preferences."""
-
-    theme: str = Field("system", description="Theme preference (light, dark, system)")
-    language: str = Field("en", description="Interface language")
-    auto_refresh: bool = Field(True, description="Auto-refresh results")
-    results_per_page: int = Field(10, ge=5, le=100, description="Results per page")
 
 
 class AppSettings(BaseModel):
@@ -208,7 +164,6 @@ class AppSettings(BaseModel):
     jenkins: JenkinsSettings = Field(default_factory=JenkinsSettings, description="Jenkins settings")
     github: GitHubSettings = Field(default_factory=GitHubSettings, description="GitHub settings")
     ai: AISettings = Field(default_factory=AISettings, description="AI settings")
-    preferences: UserPreferences = Field(default_factory=UserPreferences, description="User preferences")
     last_updated: datetime | None = Field(None, description="Last settings update timestamp")
 
 
@@ -218,7 +173,6 @@ class SettingsUpdate(BaseModel):
     jenkins: JenkinsSettings | None = Field(None, description="Jenkins settings to update")
     github: GitHubSettings | None = Field(None, description="GitHub settings to update")
     ai: AISettings | None = Field(None, description="AI settings to update")
-    preferences: UserPreferences | None = Field(None, description="User preferences to update")
 
 
 class ConnectionTestResult(BaseModel):

@@ -317,10 +317,8 @@ export const validateGeminiApiKey = async (
 ): Promise<{ valid: boolean; message?: string }> => {
   try {
     const response = await api.post(
-      "/ai/models/validate-key",
-      {
-        api_key: apiKey,
-      },
+      `/ai/models/validate-key?api_key=${encodeURIComponent(apiKey)}`,
+      {},
       {
         headers: {
           "Content-Type": "application/json",
@@ -351,10 +349,8 @@ export const validateGeminiApiKey = async (
 export const fetchGeminiModels = async (apiKey: string): Promise<any[]> => {
   try {
     const response = await api.post(
-      "/ai/models",
-      {
-        api_key: apiKey,
-      },
+      `/ai/models?api_key=${encodeURIComponent(apiKey)}`,
+      {},
       {
         headers: {
           "Content-Type": "application/json",
@@ -427,7 +423,7 @@ export interface GitHubSettings {
 
 export interface AISettings {
   gemini_api_key?: string;
-  gemini_model: string;
+  model: string;
   temperature: number;
   max_tokens: number;
 }

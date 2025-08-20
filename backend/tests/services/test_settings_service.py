@@ -169,7 +169,7 @@ class TestSettingsService:
                     ),  # pragma: allowlist secret
                     ai=AISettings(
                         gemini_api_key=FAKE_NEW_API_KEY,
-                        gemini_model="gemini-1.5-pro",
+                        model="gemini-1.5-pro",
                         temperature=0.9,  # pragma: allowlist secret
                     ),  # pragma: allowlist secret
                     preferences=UserPreferences(theme="light", auto_refresh=False),
@@ -179,7 +179,7 @@ class TestSettingsService:
 
                 assert result.jenkins.url == "https://jenkins.example.com"
                 assert result.ai.gemini_api_key == FAKE_NEW_API_KEY
-                assert result.ai.gemini_model == "gemini-1.5-pro"
+                assert result.ai.model == "gemini-1.5-pro"
                 assert result.preferences.theme == "light"
                 assert result.preferences.auto_refresh is False
 

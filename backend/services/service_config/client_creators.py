@@ -1,11 +1,11 @@
 """Service client creators for TestInsight AI."""
 
-from backend.services.service_config.base import BaseServiceConfig
-from backend.services.service_config.config_getters import ServiceConfigGetters
 from backend.services.ai_analyzer import AIAnalyzer
 from backend.services.gemini_api import GeminiClient
 from backend.services.git_client import GitClient
 from backend.services.jenkins_client import JenkinsClient
+from backend.services.service_config.base import BaseServiceConfig
+from backend.services.service_config.config_getters import ServiceConfigGetters
 
 
 class ServiceClientCreators(BaseServiceConfig):
@@ -59,7 +59,7 @@ class ServiceClientCreators(BaseServiceConfig):
         )
 
     def create_configured_ai_client(self, api_key: str | None = None) -> AIAnalyzer:
-        """Create an AI analyzer with provided args or current settings.
+        """Create an AI analyzer with provided API key or current settings.
 
         Args:
             api_key: Gemini API key (uses settings if not provided)
@@ -68,20 +68,21 @@ class ServiceClientCreators(BaseServiceConfig):
             Configured AIAnalyzer instance
 
         Raises:
-            ValueError: If AI service is not configured and no parameters provided
+            ValueError: If AI service is not configured and no API key provided
         """
-
         # Prefer provided args over config
         getters = ServiceConfigGetters()
         config = getters.get_ai_config()
 
         final_api_key = api_key or config["api_key"]
 
-        if not final_api_key:
-            raise ValueError("AI service is not configured. Please provide an API key.")
-
         if not isinstance(final_api_key, str):
-            raise ValueError("AI API key must be a string")
+            raise TypeError("API key must be a string.")
+
+        if not final_api_key or not final_api_key.strip():
+            raise ValueError(
+                "AI service is not configured. Please provide a Gemini API key in settings or as parameter."
+            )
 
         gemini_client = GeminiClient(api_key=final_api_key)
         return AIAnalyzer(client=gemini_client)

@@ -1,5 +1,7 @@
 """Service connection testers for TestInsight AI."""
 
+from typing import Any
+
 import requests
 
 from backend.services.service_config.base import BaseServiceConfig
@@ -93,25 +95,60 @@ class ServiceConnectionTesters(BaseServiceConfig):
                 raise
             raise ConnectionError(f"GitHub connection error: {str(e)}")
 
-    def test_ai_connection(self, api_key: str | None = None) -> bool:
-        """Test AI service connection with provided args or current settings.
-
-        Args:
-            api_key: Gemini API key (uses settings if not provided)
+    def test_ai_connection(self) -> bool:
+        """Test AI service connection using current settings and active authentication method.
 
         Returns:
             True if connection is successful
 
         Raises:
             ConnectionError: If AI service connection fails
-            ValueError: If API key is not configured and not provided
+            ValueError: If API key is not configured
         """
         try:
-            # Use the create_configured method to follow the same pattern
-            # Note: GeminiClient constructor already validates the API key
+            # Use the create_configured method which will respect active_auth_method from settings
             creators = ServiceClientCreators()
-            creators.create_configured_ai_client(api_key=api_key)
+            creators.create_configured_ai_client()
             return True
+        except ValueError as e:
+            # Re-raise ValueError for proper error handling
+            raise e
+        except Exception as e:
+            raise ConnectionError(f"AI service connection error: {str(e)}")
+
+    def test_ai_connection_with_config(self, ai_config: dict[str, Any]) -> bool:
+        """Test AI service connection with provided configuration.
+
+        Args:
+            ai_config: AI configuration dictionary with API key
+
+        Returns:
+            True if connection is successful
+
+        Raises:
+            ConnectionError: If AI service connection fails
+            ValueError: If configuration is invalid
+        """
+        try:
+            # Extract API key from the test config
+            api_key = ai_config.get("gemini_api_key")
+
+            # Convert empty string to None for proper handling
+            if api_key == "":
+                api_key = None
+
+            if not api_key or not api_key.strip():
+                raise ValueError("AI service is not configured. Please provide a Gemini API key.")
+
+            # Create AI client directly with test credentials
+            from backend.services.ai_analyzer import AIAnalyzer
+            from backend.services.gemini_api import GeminiClient
+
+            gemini_client = GeminiClient(api_key=api_key)
+            AIAnalyzer(client=gemini_client)
+
+            return True
+
         except ValueError as e:
             # Re-raise ValueError for proper error handling
             raise e

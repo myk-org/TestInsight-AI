@@ -76,52 +76,6 @@ com.example.app.ValidationTest > testEmailValidation() FAILED
 
   return (
     <div className="space-y-6">
-      {/* Log Type Selection */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-          Log Type
-        </label>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {logTypeOptions.map((option) => (
-            <label
-              key={option.value}
-              className={`relative flex cursor-pointer rounded-lg border p-4 focus:outline-none transition-colors ${
-                logType === option.value
-                  ? 'border-primary-500 dark:border-primary-400 bg-primary-50 dark:bg-primary-900/20'
-                  : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:border-gray-400 dark:hover:border-gray-500'
-              }`}
-            >
-              <input
-                type="radio"
-                name="log-type"
-                value={option.value}
-                checked={logType === option.value}
-                onChange={(e) => setLogType(e.target.value as any)}
-                className="sr-only"
-              />
-              <div className="flex flex-col">
-                <span
-                  className={`block text-sm font-medium ${
-                    logType === option.value ? 'text-primary-900 dark:text-primary-200' : 'text-gray-900 dark:text-white'
-                  }`}
-                >
-                  {option.label}
-                </span>
-                <span
-                  className={`block text-xs ${
-                    logType === option.value ? 'text-primary-700 dark:text-primary-300' : 'text-gray-500 dark:text-gray-400'
-                  }`}
-                >
-                  {option.description}
-                </span>
-              </div>
-              {logType === option.value && (
-                <div className="absolute -inset-px rounded-lg border-2 border-primary-500 dark:border-primary-400 pointer-events-none" />
-              )}
-            </label>
-          ))}
-        </div>
-      </div>
 
       {/* Text Area */}
       <div>

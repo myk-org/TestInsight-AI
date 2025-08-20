@@ -15,17 +15,22 @@ class GeminiClient:
     """Gemini client for all AI operations using google-genai."""
 
     def __init__(self, api_key: str):
-        """Initialize Gemini client.
+        """Initialize Gemini client with API key.
 
         Args:
             api_key: Google Gemini API key
 
         Raises:
-            ValueError: If API key is invalid
+            ValueError: If API key is not provided or invalid
         """
+        if not api_key or not api_key.strip():
+            raise ValueError("API key is required")
+
         self.api_key = api_key
         self.client = genai.Client(api_key=api_key)
-        self.validate_api_key()
+
+        # Validate connection
+        self.validate_connection()
 
     def _list_models(self) -> list[Any]:
         """List models from Gemini API.
@@ -44,21 +49,21 @@ class GeminiClient:
             logger.error(f"Error listing models: {e}")
             raise ConnectionError(f"Failed to list models: {e}") from e
 
-    def validate_api_key(self) -> bool:
+    def validate_connection(self) -> bool:
         """Validate API key format and connection."""
-        # First validate format
-        if not self.api_key:
-            raise ValueError("API key is required")
-
-        # Use SettingsValidator for format validation
+        # Validate API key format
         validator = SettingsValidator()
         validation_errors = validator.validate_gemini_api_key(self.api_key)
 
         if validation_errors:
-            return False
+            raise ValueError(f"Invalid API key format: {'; '.join(validation_errors)}")
 
         # Test connection by listing models
-        return self._list_models() is not None
+        try:
+            return self._list_models() is not None
+        except Exception as e:
+            logger.error(f"Authentication validation failed: {e}")
+            raise ValueError(f"Failed to validate authentication: {e}")
 
     def get_available_models(self) -> GeminiModelsResponse:
         """Get list of available Gemini models.
