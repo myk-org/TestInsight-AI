@@ -118,12 +118,25 @@ class AIAnalyzer:
         if not result["success"]:
             raise ConnectionError(f"AI content generation failed: {result['error']}")
 
+        content = result["content"].strip()
+        if not content:
+            raise ValueError("AI returned empty content for insights generation")
+
+        # Strip markdown code blocks if present
+        if content.startswith("```json"):
+            content = content.replace("```json", "").replace("```", "").strip()
+        elif content.startswith("```"):
+            content = content.replace("```", "").strip()
+
         try:
-            insights_data = json.loads(result["content"].strip())
-            return [self._create_insight_from_dict(insight) for insight in insights_data]
-        except json.JSONDecodeError:
-            # Fallback
-            return []
+            insights_data = json.loads(content)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"AI returned invalid JSON for insights: {content} Error: {e}")
+
+        if not isinstance(insights_data, list):
+            raise ValueError(f"AI returned non-array JSON for insights: {type(insights_data)}")
+
+        return [self._create_insight_from_dict(insight) for insight in insights_data]
 
     def _generate_summary(self, context: str, insights: list[AIInsight]) -> str:
         """Generate analysis summary.
