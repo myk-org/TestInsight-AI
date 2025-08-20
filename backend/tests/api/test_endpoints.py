@@ -489,12 +489,14 @@ class TestAIModelsEndpoints:
         assert response.status_code == 429
         assert "Rate limit exceeded" in response.json()["detail"]
 
-    @patch("backend.api.routers.ai.ServiceConnectionTesters")
-    def test_validate_gemini_api_key_success(self, mock_connection_testers, client):
+    @patch("backend.api.routers.ai.ServiceClientCreators")
+    def test_validate_gemini_api_key_success(self, mock_service_client_creators, client):
         """Test successful API key validation."""
-        mock_testers_instance = Mock()
-        mock_connection_testers.return_value = mock_testers_instance
-        mock_testers_instance.test_ai_connection.return_value = True
+        mock_creators_instance = Mock()
+        mock_service_client_creators.return_value = mock_creators_instance
+        # Mock successful client creation (no exception means valid key)
+        mock_ai_analyzer = Mock()
+        mock_creators_instance.create_configured_ai_client.return_value = mock_ai_analyzer
 
         response = client.post(
             "/api/v1/ai/models/validate-key?api_key=" + FAKE_GEMINI_API_KEY
@@ -505,12 +507,13 @@ class TestAIModelsEndpoints:
         assert data["valid"] is True
         assert "API key is valid" in data["message"]
 
-    @patch("backend.api.routers.ai.ServiceConnectionTesters")
-    def test_validate_gemini_api_key_invalid(self, mock_connection_testers, client):
+    @patch("backend.api.routers.ai.ServiceClientCreators")
+    def test_validate_gemini_api_key_invalid(self, mock_service_client_creators, client):
         """Test API key validation with invalid key."""
-        mock_testers_instance = Mock()
-        mock_connection_testers.return_value = mock_testers_instance
-        mock_testers_instance.test_ai_connection.side_effect = ConnectionError("Invalid API key")
+        mock_creators_instance = Mock()
+        mock_service_client_creators.return_value = mock_creators_instance
+        # Mock failed client creation (ConnectionError means invalid key)
+        mock_creators_instance.create_configured_ai_client.side_effect = ConnectionError("Invalid API key")
 
         response = client.post("/api/v1/ai/models/validate-key?api_key=" + FAKE_INVALID_API_KEY)
 
@@ -775,7 +778,7 @@ class TestEndpointValidation:
     def test_gemini_models_invalid_api_key_length(self, client):
         """Test Gemini models with too short API key."""
         response = client.post("/api/v1/ai/models", json={"api_key": "short"})
-        assert response.status_code == 422  # Validation error
+        assert response.status_code == 400  # Service validation error, not schema validation
 
     def test_settings_update_invalid_data(self, client):
         """Test settings update with invalid data."""

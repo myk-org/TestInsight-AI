@@ -343,7 +343,7 @@ class TestServiceConfig:
         mock_client_creators.create_configured_ai_client.return_value = mock_ai_client
         mock_client_creators_class.return_value = mock_client_creators
 
-        result = service_connection_testers.test_ai_connection(api_key=FAKE_CUSTOM_API_KEY)
+        result = service_connection_testers.test_ai_connection_with_config({"gemini_api_key": FAKE_CUSTOM_API_KEY})
 
         assert result is True
         mock_client_creators.create_configured_ai_client.assert_called_once_with(api_key=FAKE_CUSTOM_API_KEY)
@@ -354,7 +354,7 @@ class TestServiceConfig:
         mock_client_creators_class.side_effect = Exception("Invalid API key")
 
         with pytest.raises(ConnectionError, match="AI service connection error"):
-            service_connection_testers.test_ai_connection(api_key=FAKE_INVALID_API_KEY)
+            service_connection_testers.test_ai_connection_with_config({"gemini_api_key": FAKE_INVALID_API_KEY})
 
     @patch("backend.services.service_config.connection_testers.ServiceClientCreators")
     def test_test_ai_connection_exception(self, mock_client_creators_class, service_connection_testers):
@@ -362,7 +362,7 @@ class TestServiceConfig:
         mock_client_creators_class.side_effect = Exception("API error")
 
         with pytest.raises(ConnectionError, match="AI service connection error"):
-            service_connection_testers.test_ai_connection(api_key=FAKE_TEST_TOKEN)
+            service_connection_testers.test_ai_connection_with_config({"gemini_api_key": FAKE_TEST_TOKEN})
 
     def test_is_jenkins_configured(self, service_status_checkers):
         """Test Jenkins configuration check."""

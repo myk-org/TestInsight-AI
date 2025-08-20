@@ -16,7 +16,7 @@ class TestGeminiClient:
     """Test cases for GeminiClient class."""
 
     @patch("backend.services.gemini_api.genai.Client")
-    @patch.object(GeminiClient, "validate_api_key")
+    @patch.object(GeminiClient, "validate_connection")
     def test_init_success(self, mock_validate, mock_genai_client):
         """Test GeminiClient initialization success."""
         mock_validate.return_value = True
@@ -31,7 +31,7 @@ class TestGeminiClient:
         mock_validate.assert_called_once()
 
     @patch("backend.services.gemini_api.genai.Client")
-    @patch.object(GeminiClient, "validate_api_key")
+    @patch.object(GeminiClient, "validate_connection")
     def test_init_validation_failure(self, mock_validate, mock_genai_client):
         """Test GeminiClient initialization with validation failure."""
         mock_validate.side_effect = ValueError("Invalid API key")
@@ -53,7 +53,7 @@ class TestGeminiClient:
         ]
         mock_client_instance.models.list.return_value = fake_models
 
-        with patch.object(GeminiClient, "validate_api_key"):
+        with patch.object(GeminiClient, "validate_connection"):
             client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
             result = client._list_models()
 
@@ -67,7 +67,7 @@ class TestGeminiClient:
         mock_genai_client.return_value = mock_client_instance
         mock_client_instance.models.list.side_effect = Exception("API Error")
 
-        with patch.object(GeminiClient, "validate_api_key"):
+        with patch.object(GeminiClient, "validate_connection"):
             client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
 
             with pytest.raises(Exception, match="API Error"):
@@ -75,8 +75,8 @@ class TestGeminiClient:
 
     @patch("backend.services.gemini_api.genai.Client")
     @patch.object(SettingsValidator, "validate_gemini_api_key")
-    def test_validate_api_key_empty_key(self, mock_validator, mock_genai_client):
-        """Test validate_api_key raises ValueError for empty key."""
+    def test_validate_connection_empty_key(self, mock_validator, mock_genai_client):
+        """Test validate_connection raises ValueError for empty key."""
         mock_client_instance = Mock()
         mock_genai_client.return_value = mock_client_instance
 
@@ -85,8 +85,8 @@ class TestGeminiClient:
 
     @patch("backend.services.gemini_api.genai.Client")
     @patch.object(SettingsValidator, "validate_gemini_api_key")
-    def test_validate_api_key_format_validation_failure(self, mock_validator, mock_genai_client):
-        """Test validate_api_key with format validation errors."""
+    def test_validate_connection_format_validation_failure(self, mock_validator, mock_genai_client):
+        """Test validate_connection with format validation errors."""
         mock_client_instance = Mock()
         mock_genai_client.return_value = mock_client_instance
         mock_validator.return_value = ["Invalid format"]
@@ -96,13 +96,13 @@ class TestGeminiClient:
             client.api_key = FAKE_INVALID_FORMAT_KEY
             client.client = mock_client_instance
 
-            result = client.validate_api_key()
-            assert result is False
+            with pytest.raises(ValueError, match="Invalid API key format"):
+                client.validate_connection()
 
     @patch("backend.services.gemini_api.genai.Client")
     @patch.object(SettingsValidator, "validate_gemini_api_key")
-    def test_validate_api_key_connection_test_success(self, mock_validator, mock_genai_client):
-        """Test validate_api_key with successful connection test."""
+    def test_validate_connection_test_success(self, mock_validator, mock_genai_client):
+        """Test validate_connection with successful connection test."""
         mock_client_instance = Mock()
         mock_genai_client.return_value = mock_client_instance
         mock_validator.return_value = []  # No validation errors
@@ -112,24 +112,24 @@ class TestGeminiClient:
             client.api_key = FAKE_GEMINI_API_KEY
             client.client = mock_client_instance
 
-            result = client.validate_api_key()
+            result = client.validate_connection()
             assert result is True
 
     @patch("backend.services.gemini_api.genai.Client")
     @patch.object(SettingsValidator, "validate_gemini_api_key")
-    def test_validate_api_key_connection_test_failure(self, mock_validator, mock_genai_client):
-        """Test validate_api_key with connection test failure."""
+    def test_validate_connection_test_failure(self, mock_validator, mock_genai_client):
+        """Test validate_connection with connection test failure."""
         mock_client_instance = Mock()
         mock_genai_client.return_value = mock_client_instance
         mock_validator.return_value = []  # No validation errors
 
-        with patch.object(GeminiClient, "_list_models", return_value=None):
+        with patch.object(GeminiClient, "_list_models", side_effect=ConnectionError("Connection failed")):
             client = GeminiClient.__new__(GeminiClient)  # Skip __init__
             client.api_key = FAKE_GEMINI_API_KEY
             client.client = mock_client_instance
 
-            result = client.validate_api_key()
-            assert result is False  # Returns False if _list_models returns None
+            with pytest.raises(ValueError, match="Failed to validate authentication"):
+                client.validate_connection()
 
     @patch("backend.services.gemini_api.genai.Client")
     def test_get_available_models_success(self, mock_genai_client):
@@ -168,7 +168,7 @@ class TestGeminiClient:
         fake_models = [mock_text_model, mock_vision_model, mock_embedding_model]
 
         with (
-            patch.object(GeminiClient, "validate_api_key"),
+            patch.object(GeminiClient, "validate_connection"),
             patch.object(GeminiClient, "_list_models", return_value=fake_models),
         ):
             client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
@@ -195,7 +195,7 @@ class TestGeminiClient:
         fake_models = [mock_model_no_methods]
 
         with (
-            patch.object(GeminiClient, "validate_api_key"),
+            patch.object(GeminiClient, "validate_connection"),
             patch.object(GeminiClient, "_list_models", return_value=fake_models),
         ):
             client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
@@ -211,7 +211,7 @@ class TestGeminiClient:
         mock_genai_client.return_value = mock_client_instance
 
         with (
-            patch.object(GeminiClient, "validate_api_key"),
+            patch.object(GeminiClient, "validate_connection"),
             patch.object(GeminiClient, "_list_models", return_value=[]),
         ):
             client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
@@ -251,7 +251,7 @@ class TestGeminiClient:
             fake_models.append(mock_model)
 
         with (
-            patch.object(GeminiClient, "validate_api_key"),
+            patch.object(GeminiClient, "validate_connection"),
             patch.object(GeminiClient, "_list_models", return_value=fake_models),
         ):
             client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
@@ -281,7 +281,7 @@ class TestGeminiClient:
         fake_models = [mock_model]
 
         with (
-            patch.object(GeminiClient, "validate_api_key"),
+            patch.object(GeminiClient, "validate_connection"),
             patch.object(GeminiClient, "_list_models", return_value=fake_models),
         ):
             client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
@@ -306,7 +306,7 @@ class TestGeminiClient:
         mock_response.text = "This is the generated content from Gemini"
         mock_client_instance.models.generate_content.return_value = mock_response
 
-        with patch.object(GeminiClient, "validate_api_key"):
+        with patch.object(GeminiClient, "validate_connection"):
             client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
 
             result = client.generate_content(
@@ -336,7 +336,7 @@ class TestGeminiClient:
         mock_response.text = "Generated content"
         mock_client_instance.models.generate_content.return_value = mock_response
 
-        with patch.object(GeminiClient, "validate_api_key"):
+        with patch.object(GeminiClient, "validate_connection"):
             client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
 
             result = client.generate_content("Test prompt")
@@ -360,7 +360,7 @@ class TestGeminiClient:
         mock_response = Mock(spec=[])  # No 'text' attribute
         mock_client_instance.models.generate_content.return_value = mock_response
 
-        with patch.object(GeminiClient, "validate_api_key"):
+        with patch.object(GeminiClient, "validate_connection"):
             client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
 
             result = client.generate_content("Test prompt")
@@ -375,7 +375,7 @@ class TestGeminiClient:
         mock_genai_client.return_value = mock_client_instance
         mock_client_instance.models.generate_content.side_effect = Exception("API rate limit exceeded")
 
-        with patch.object(GeminiClient, "validate_api_key"):
+        with patch.object(GeminiClient, "validate_connection"):
             client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
 
             with pytest.raises(Exception, match="API rate limit exceeded"):
@@ -391,7 +391,7 @@ class TestGeminiClient:
         mock_response.text = "Generated content"
         mock_client_instance.models.generate_content.return_value = mock_response
 
-        with patch.object(GeminiClient, "validate_api_key"):
+        with patch.object(GeminiClient, "validate_connection"):
             client = GeminiClient(api_key=FAKE_GEMINI_API_KEY)
 
             # Test with model name that already has 'models/' prefix
@@ -420,7 +420,7 @@ class TestGeminiClient:
             client.api_key = FAKE_GEMINI_API_KEY
             client.client = mock_client_instance
 
-            result = client.validate_api_key()
+            result = client.validate_connection()
 
             mock_validator.assert_called_once_with(FAKE_GEMINI_API_KEY)
             assert result is True
@@ -444,7 +444,7 @@ class TestGeminiClient:
         fake_models = [mock_model]
 
         with (
-            patch.object(GeminiClient, "validate_api_key"),
+            patch.object(GeminiClient, "validate_connection"),
             patch.object(GeminiClient, "_list_models", return_value=fake_models),
             patch("backend.services.gemini_api.logger") as mock_logger,
         ):

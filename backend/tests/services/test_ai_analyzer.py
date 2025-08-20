@@ -89,7 +89,7 @@ class TestAIAnalyzer:
         assert "Additional Context:" not in result
 
     def test_build_analysis_context_includes_full_text(self):
-        """Test _build_analysis_context includes full text with ... appended."""
+        """Test _build_analysis_context includes full text."""
         mock_client = Mock(spec=GeminiClient)
         analyzer = AIAnalyzer(client=mock_client)
 
@@ -98,11 +98,10 @@ class TestAIAnalyzer:
 
         result = analyzer._build_analysis_context(request)
 
-        # Should include full text with "..." appended
+        # Should include full text
         assert "B" * 10000 in result  # Full text should be present
         assert result.count("B") == 10000  # All 10000 B's should be there
-        assert "..." in result  # "..." is always appended
-        assert "Text Content to Analyze:" in result
+        assert "Text Content to Analyze:" in result  # Should have the header
 
     def test_generate_insights_success(self):
         """Test _generate_insights with successful AI response."""
@@ -162,10 +161,9 @@ class TestAIAnalyzer:
 
         analyzer = AIAnalyzer(client=mock_client)
 
-        result = analyzer._generate_insights("context")
-
-        # Should return empty list as fallback
-        assert result == []
+        # Should raise ValueError for invalid JSON
+        with pytest.raises(ValueError, match="AI returned invalid JSON"):
+            analyzer._generate_insights("context")
 
     def test_generate_insights_empty_response(self):
         """Test _generate_insights with empty JSON array."""
@@ -264,9 +262,8 @@ class TestAIAnalyzer:
 
         result = analyzer._generate_recommendations("context", [])
 
-        # Should return fallback recommendations
-        expected_fallback = ["Review test failures manually", "Check configuration", "Analyze error patterns"]
-        assert result == expected_fallback
+        # Should return empty list as fallback
+        assert result == []
 
     def test_create_insight_from_dict_complete_data(self):
         """Test _create_insight_from_dict with complete data."""
@@ -373,8 +370,8 @@ class TestAIAnalyzer:
         assert "Focus on:" in call_args
         assert "Failed tests and their root causes" in call_args
 
-    def test_generate_summary_limits_context_length(self):
-        """Test _generate_summary limits context length in prompt."""
+    def test_generate_summary_includes_full_context(self):
+        """Test _generate_summary includes full context and insights in prompt."""
         mock_client = Mock(spec=GeminiClient)
         mock_client.generate_content.return_value = {"success": True, "content": "Summary"}
 
@@ -392,15 +389,16 @@ class TestAIAnalyzer:
             )
         ]
 
-        analyzer._generate_summary(long_context, insights)
+        result = analyzer._generate_summary(long_context, insights)
 
-        # Check that context was truncated to 1000 chars
+        # Check that full context is included and we get the expected result
         call_args = mock_client.generate_content.call_args[0][0]
-        assert "A" * 1000 in call_args
-        assert "..." in call_args
+        assert "A" * 2000 in call_args  # Full context should be present
+        assert "Test Issue" in call_args  # Insights should be included
+        assert result == "Summary"
 
-    def test_generate_summary_limits_insights_count(self):
-        """Test _generate_summary limits insights to first 5."""
+    def test_generate_summary_includes_all_insights(self):
+        """Test _generate_summary includes all provided insights."""
         mock_client = Mock(spec=GeminiClient)
         mock_client.generate_content.return_value = {"success": True, "content": "Summary"}
 
@@ -422,14 +420,14 @@ class TestAIAnalyzer:
 
         analyzer._generate_summary("context", insights)
 
-        # Check that only first 5 insights are included
+        # Check that all insights are included in the prompt
         call_args = mock_client.generate_content.call_args[0][0]
         assert "Issue 0" in call_args
         assert "Issue 4" in call_args
-        assert "Issue 5" not in call_args
+        assert "Issue 9" in call_args  # All 10 insights should be present
 
-    def test_generate_recommendations_limits_context_and_insights(self):
-        """Test _generate_recommendations limits context and insights."""
+    def test_generate_recommendations_includes_context_and_insights(self):
+        """Test _generate_recommendations includes full context and insights."""
         mock_client = Mock(spec=GeminiClient)
         mock_client.generate_content.return_value = {"success": True, "content": '["Recommendation"]'}
 
@@ -449,15 +447,14 @@ class TestAIAnalyzer:
                 )
             )
 
-        analyzer._generate_recommendations(long_context, insights)
+        result = analyzer._generate_recommendations(long_context, insights)
 
-        # Check that context was truncated to 500 chars and only 3 insights included
+        # Check that full context and all insights are included
         call_args = mock_client.generate_content.call_args[0][0]
-        assert "B" * 500 in call_args
-        assert "..." in call_args
+        assert "B" * 1000 in call_args  # Full context should be present
         assert "Issue 0" in call_args
-        assert "Issue 2" in call_args
-        assert "Issue 3" not in call_args  # Only first 3 insights
+        assert "Issue 4" in call_args  # All 5 insights should be present
+        assert result == ["Recommendation"]
 
     def test_integration_full_analysis_flow(self):
         """Test full analysis flow integration."""

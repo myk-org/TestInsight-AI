@@ -13,7 +13,6 @@ from backend.models.schemas import (
     SettingsUpdate,
     JenkinsSettings,
     AISettings,
-    UserPreferences,
 )
 from backend.services.security_utils import SettingsValidator
 from backend.tests.conftest import (
@@ -80,7 +79,6 @@ class TestSettingsService:
                 "temperature": 0.8,
                 "max_tokens": 2048,
             },
-            "preferences": {"theme": "dark", "auto_analyze": True, "save_history": True},
             "last_updated": "2024-01-01T12:00:00",
         }
 
@@ -97,7 +95,6 @@ class TestSettingsService:
                 assert settings.jenkins.url == "https://fake-jenkins.example.com"
                 assert settings.github.token == FAKE_GITHUB_TOKEN
                 assert settings.ai.gemini_api_key == FAKE_GEMINI_API_KEY
-                assert settings.preferences.theme == "dark"
 
     def test_get_settings_caches_result(self):
         """Test get_settings caches the result."""
@@ -172,7 +169,6 @@ class TestSettingsService:
                         model="gemini-1.5-pro",
                         temperature=0.9,  # pragma: allowlist secret
                     ),  # pragma: allowlist secret
-                    preferences=UserPreferences(theme="light", auto_refresh=False),
                 )
 
                 result = service.update_settings(update)
@@ -180,8 +176,6 @@ class TestSettingsService:
                 assert result.jenkins.url == "https://jenkins.example.com"
                 assert result.ai.gemini_api_key == FAKE_NEW_API_KEY
                 assert result.ai.model == "gemini-1.5-pro"
-                assert result.preferences.theme == "light"
-                assert result.preferences.auto_refresh is False
 
     def test_update_settings_merges_with_existing(self):
         """Test update_settings merges with existing settings."""
