@@ -57,7 +57,12 @@ export interface JenkinsConfig {
  */
 export const analyzeXMLFiles = async (
   files: File[],
-  repoUrl?: string,
+  repositoryConfig?: {
+    url: string;
+    branch?: string;
+    commit?: string;
+    includeContext?: boolean;
+  }
 ): Promise<AnalysisResult> => {
   try {
     // Read all files and combine their content
@@ -69,11 +74,11 @@ export const analyzeXMLFiles = async (
     );
 
     const combinedText = fileContents.join("\n");
-    const customContext = repoUrl
-      ? `Repository: ${repoUrl}\nAnalyzing XML test results files: ${files.map((f) => f.name).join(", ")}`
+    const customContext = repositoryConfig?.url
+      ? `Repository: ${repositoryConfig.url}\nAnalyzing XML test results files: ${files.map((f) => f.name).join(", ")}`
       : `Analyzing XML test results files: ${files.map((f) => f.name).join(", ")}`;
 
-    return await analyzeText(combinedText, customContext);
+    return await analyzeText(combinedText, customContext, repositoryConfig);
   } catch (error) {
     if (error instanceof Error) {
       throw error;
@@ -88,13 +93,18 @@ export const analyzeXMLFiles = async (
 export const analyzeTextLog = async (
   logText: string,
   logType: "console" | "junit" | "testng" | "pytest" | "other",
-  repoUrl?: string,
+  repositoryConfig?: {
+    url: string;
+    branch?: string;
+    commit?: string;
+    includeContext?: boolean;
+  }
 ): Promise<AnalysisResult> => {
   try {
-    const customContext = repoUrl
-      ? `Repository: ${repoUrl}\nLog type: ${logType}`
+    const customContext = repositoryConfig?.url
+      ? `Repository: ${repositoryConfig.url}\nLog type: ${logType}`
       : `Log type: ${logType}`;
-    return await analyzeText(logText, customContext);
+    return await analyzeText(logText, customContext, repositoryConfig);
   } catch (error) {
     if (error instanceof Error) {
       throw error;
@@ -136,12 +146,32 @@ export const getJenkinsBuildConsole = async (
 export const analyzeText = async (
   text: string,
   customContext?: string,
+  repositoryConfig?: {
+    url: string;
+    branch?: string;
+    commit?: string;
+    includeContext?: boolean;
+  }
 ): Promise<AnalysisResult> => {
   const formData = new FormData();
   formData.append("text", text);
 
   if (customContext && customContext.trim()) {
     formData.append("custom_context", customContext.trim());
+  }
+
+  // Add repository context integration
+  if (repositoryConfig?.url) {
+    formData.append("repository_url", repositoryConfig.url);
+    if (repositoryConfig.branch) {
+      formData.append("repository_branch", repositoryConfig.branch);
+    }
+    if (repositoryConfig.commit) {
+      formData.append("repository_commit", repositoryConfig.commit);
+    }
+    if (repositoryConfig.includeContext) {
+      formData.append("include_repository_context", "true");
+    }
   }
 
   try {
@@ -205,42 +235,39 @@ export const getJenkinsJobBuilds = async (
  */
 export const analyzeJenkinsBuild = async (
   config: JenkinsConfig,
-  repoUrl?: string,
+  repositoryConfig?: {
+    url: string;
+    branch?: string;
+    commit?: string;
+    includeContext?: boolean;
+  }
 ): Promise<AnalysisResult> => {
   try {
-    let buildNumber: number;
+    // Use the dedicated Jenkins analysis endpoint
+    const formData = new FormData();
+    formData.append("job_name", config.jobName);
+    formData.append("build_number", config.buildNumber || "");
 
-    // Handle build number - if empty, get the latest build
-    if (
-      !config.buildNumber ||
-      config.buildNumber.trim() === "" ||
-      config.buildNumber.toLowerCase() === "latest"
-    ) {
-      const builds = await getJenkinsJobBuilds(config.jobName, 1);
-      if (builds.length === 0) {
-        throw new Error("No builds found for this job");
+    if (repositoryConfig?.url) {
+      formData.append("repo_url", repositoryConfig.url);
+      if (repositoryConfig.branch) {
+        formData.append("repository_branch", repositoryConfig.branch);
       }
-      buildNumber = builds[0].number;
-    } else {
-      // Parse the build number
-      const parsed = parseInt(config.buildNumber, 10);
-      if (isNaN(parsed)) {
-        throw new Error('Build number must be a valid number or "latest"');
+      if (repositoryConfig.commit) {
+        formData.append("repository_commit", repositoryConfig.commit);
       }
-      buildNumber = parsed;
+      if (repositoryConfig.includeContext) {
+        formData.append("include_repository_context", "true");
+      }
     }
 
-    // Get the console output from Jenkins
-    const consoleOutput = await getJenkinsBuildConsole(
-      config.jobName,
-      buildNumber,
-    );
+    const response = await api.post("/analyze-jenkins", formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    });
 
-    // Then analyze the console output using the general analyze endpoint
-    const customContext = repoUrl
-      ? `Repository: ${repoUrl}\nJenkins Job: ${config.jobName}, Build: ${buildNumber}`
-      : `Jenkins Job: ${config.jobName}, Build: ${buildNumber}`;
-    return await analyzeText(consoleOutput, customContext);
+    return response.data;
   } catch (error) {
     if (error instanceof Error) {
       throw error;

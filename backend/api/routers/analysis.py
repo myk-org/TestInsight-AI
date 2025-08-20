@@ -14,6 +14,10 @@ router = APIRouter(prefix="/analyze", tags=["analysis"])
 async def analyze(
     text: str = Form(..., description="Text content to analyze (logs, junit xml, etc.)"),
     custom_context: str | None = Form(None, description="Additional context"),
+    repository_url: str | None = Form(None, description="GitHub repository URL for code context"),
+    repository_branch: str | None = Form(None, description="Repository branch to analyze"),
+    repository_commit: str | None = Form(None, description="Repository commit hash to analyze"),
+    include_repository_context: bool = Form(False, description="Include repository source code in analysis"),
     api_key: str | None = Form(None, description="Gemini API key (uses settings if not provided)"),
 ) -> AnalysisResponse:
     """Analyze text content with AI (legacy endpoint)."""
@@ -23,7 +27,32 @@ async def analyze(
         if not ai_analyzer:
             raise HTTPException(status_code=503, detail="AI analyzer not configured")
 
-        request = AnalysisRequest(text=text, custom_context=custom_context)
+        # Clone repository if requested
+        cloned_repo_path = None
+        if include_repository_context and repository_url:
+            try:
+                git_client = client_creators.create_configured_git_client(
+                    repo_url=repository_url, branch=repository_branch, commit=repository_commit
+                )
+                cloned_repo_path = str(git_client.repo_path)
+            except Exception:
+                # Fallback: continue without repository context if cloning fails
+                pass
+
+        # Create request with repository information
+        request = AnalysisRequest(
+            text=text,
+            custom_context=custom_context,
+            repository_url=repository_url,
+            repository_branch=repository_branch,
+            repository_commit=repository_commit,
+            include_repository_context=include_repository_context,
+        )
+
+        # Add cloned path to request object for AI analyzer
+        if cloned_repo_path:
+            request.cloned_repo_path = cloned_repo_path
+
         analysis = ai_analyzer.analyze_test_results(request)
 
         return AnalysisResponse(
@@ -39,6 +68,9 @@ async def analyze(
 async def analyze_file(
     files: list[UploadFile] = File(..., description="Files to analyze (json, xml, text, log)"),
     repo_url: str | None = Form(None, description="Repository URL for context"),
+    repository_branch: str | None = Form(None, description="Repository branch to analyze"),
+    repository_commit: str | None = Form(None, description="Repository commit hash to analyze"),
+    include_repository_context: bool = Form(False, description="Include repository source code in analysis"),
     custom_context: str | None = Form(None, description="Additional context"),
     api_key: str | None = Form(None, description="Gemini API key (uses settings if not provided)"),
 ) -> AnalysisResponse:
@@ -114,13 +146,37 @@ async def analyze_file(
 
         final_context = "; ".join(context_parts) if context_parts else None
 
-        # Analyze with AI
+        # Clone repository if requested
         client_creators = ServiceClientCreators()
+        cloned_repo_path = None
+        if include_repository_context and repo_url:
+            try:
+                git_client = client_creators.create_configured_git_client(
+                    repo_url=repo_url, branch=repository_branch, commit=repository_commit
+                )
+                cloned_repo_path = str(git_client.repo_path)
+            except Exception:
+                # Fallback: continue without repository context if cloning fails
+                pass
+
+        # Analyze with AI
         ai_analyzer = client_creators.create_configured_ai_client(api_key=api_key)
         if not ai_analyzer:
             raise HTTPException(status_code=503, detail="AI analyzer not configured")
 
-        request = AnalysisRequest(text=combined_text.strip(), custom_context=final_context)
+        # Create request with repository information
+        request = AnalysisRequest(
+            text=combined_text.strip(),
+            custom_context=final_context,
+            repository_url=repo_url,
+            repository_branch=repository_branch,
+            repository_commit=repository_commit,
+            include_repository_context=include_repository_context,
+        )
+
+        # Add cloned path to request object for AI analyzer
+        if cloned_repo_path:
+            request.cloned_repo_path = cloned_repo_path
         analysis = ai_analyzer.analyze_test_results(request)
 
         return AnalysisResponse(
@@ -137,6 +193,9 @@ async def analyze_jenkins_build(
     job_name: str = Form(..., description="Jenkins job name"),
     build_number: str = Form("", description="Build number (empty for latest)"),
     repo_url: str | None = Form(None, description="Repository URL for context"),
+    repository_branch: str | None = Form(None, description="Repository branch to analyze"),
+    repository_commit: str | None = Form(None, description="Repository commit hash to analyze"),
+    include_repository_context: bool = Form(False, description="Include repository source code in analysis"),
     jenkins_url: str | None = Form(None, description="Jenkins URL (uses settings if not provided)"),
     jenkins_username: str | None = Form(None, description="Jenkins username (uses settings if not provided)"),
     jenkins_password: str | None = Form(None, description="Jenkins API token (uses settings if not provided)"),
@@ -197,7 +256,7 @@ async def analyze_jenkins_build(
             test_report = jenkins_client.get_build_test_report(job_name, final_build_number)
 
         if test_report is None:
-            raise HTTPException(status_code=404, detail=f"Console output not found for build {final_build_number}")
+            raise HTTPException(status_code=404, detail=f"Test report not found for build {final_build_number}")
 
         # Build context
         context_parts = [f"Jenkins job: {job_name}", f"Build: {final_build_number}"]
@@ -205,12 +264,36 @@ async def analyze_jenkins_build(
             context_parts.append(f"Repository: {repo_url}")
         final_context = "; ".join(context_parts)
 
+        # Clone repository if requested
+        cloned_repo_path = None
+        if include_repository_context and repo_url:
+            try:
+                git_client = client_creators.create_configured_git_client(
+                    repo_url=repo_url, branch=repository_branch, commit=repository_commit
+                )
+                cloned_repo_path = str(git_client.repo_path)
+            except Exception:
+                # Fallback: continue without repository context if cloning fails
+                pass
+
         # Analyze with AI
         ai_analyzer = client_creators.create_configured_ai_client(api_key=api_key)
         if not ai_analyzer:
             raise HTTPException(status_code=503, detail="AI analyzer not configured")
 
-        request = AnalysisRequest(text=test_report, custom_context=final_context)
+        # Create request with repository information
+        request = AnalysisRequest(
+            text=str(test_report) if test_report else "",
+            custom_context=final_context,
+            repository_url=repo_url,
+            repository_branch=repository_branch,
+            repository_commit=repository_commit,
+            include_repository_context=include_repository_context,
+        )
+
+        # Add cloned path to request object for AI analyzer
+        if cloned_repo_path:
+            request.cloned_repo_path = cloned_repo_path
         analysis = ai_analyzer.analyze_test_results(request)
 
         return AnalysisResponse(

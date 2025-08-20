@@ -44,19 +44,6 @@ class JenkinsClient(jenkins.Jenkins):
         """
         return self.get_version() is not None
 
-    def get_console_output(self, job_name: str, build_number: int) -> str:
-        """Get console output from a Jenkins build.
-
-        Args:
-            job_name: Jenkins job name
-            build_number: Build number
-
-        Returns:
-            Console output or None if not available
-        """
-
-        return self.get_build_console_output(job_name, build_number)
-
     def list_jobs(self, folder_depth: int = 0) -> list[dict[str, Any]]:
         """List all Jenkins jobs.
 

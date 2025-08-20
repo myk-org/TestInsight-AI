@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import Mock, patch
 
-from backend.models.schemas import AppSettings, JenkinsSettings, GitHubSettings, AISettings, UserPreferences
+from backend.models.schemas import AppSettings, JenkinsSettings, GitHubSettings, AISettings
 from backend.services.service_config.client_creators import ServiceClientCreators
 from backend.services.service_config.connection_testers import ServiceConnectionTesters
 from backend.services.service_config.status_checkers import ServiceStatusCheckers
@@ -41,7 +41,6 @@ class TestServiceConfig:
                 temperature=0.7,
                 max_tokens=4096,
             ),
-            preferences=UserPreferences(),
         )
 
     @pytest.fixture
@@ -364,14 +363,6 @@ class TestServiceConfig:
 
         with pytest.raises(ConnectionError, match="AI service connection error"):
             service_connection_testers.test_ai_connection(api_key=FAKE_TEST_TOKEN)
-
-    def test_get_user_preferences(self, service_config_getters):
-        """Test getting user preferences."""
-        preferences = service_config_getters.get_user_preferences()
-        assert preferences["theme"] == "system"
-        assert preferences["language"] == "en"
-        assert preferences["auto_refresh"] is True
-        assert preferences["results_per_page"] == 10
 
     def test_is_jenkins_configured(self, service_status_checkers):
         """Test Jenkins configuration check."""

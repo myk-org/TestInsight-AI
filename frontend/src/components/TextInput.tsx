@@ -21,6 +21,7 @@ const TextInput: React.FC<TextInputProps> = ({
 }) => {
   const [logText, setLogText] = useState('');
   const [logType, setLogType] = useState<'console' | 'junit' | 'testng' | 'pytest' | 'other'>('console');
+  const [includeRepoContext, setIncludeRepoContext] = useState(false);
 
   const handleAnalyze = async () => {
     if (!logText.trim()) {
@@ -30,7 +31,15 @@ const TextInput: React.FC<TextInputProps> = ({
 
     try {
       onAnalysisStart();
-      const results = await analyzeTextLog(logText.trim(), logType, repoUrl);
+
+      const repositoryConfig = repoUrl?.trim() ? {
+        url: repoUrl.trim(),
+        branch: branch?.trim() || undefined,
+        commit: commit?.trim() || undefined,
+        includeContext: includeRepoContext
+      } : undefined;
+
+      const results = await analyzeTextLog(logText.trim(), logType, repositoryConfig);
       onAnalysisComplete(results);
     } catch (error) {
       onAnalysisError(error instanceof Error ? error.message : 'Failed to analyze log text');
@@ -124,6 +133,22 @@ Example formats supported:
           )}
         </div>
       </div>
+
+      {/* Repository Context Option */}
+      {logText.trim() && repoUrl && (
+        <div className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            id="includeRepoContextText"
+            checked={includeRepoContext}
+            onChange={(e) => setIncludeRepoContext(e.target.checked)}
+            className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:focus:ring-primary-400"
+          />
+          <label htmlFor="includeRepoContextText" className="text-sm text-gray-700 dark:text-gray-300">
+            Include repository source code in analysis (slower but more accurate)
+          </label>
+        </div>
+      )}
 
       {/* Analyze Button */}
       {logText.trim() && (

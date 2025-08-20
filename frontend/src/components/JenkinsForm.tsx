@@ -37,6 +37,7 @@ const JenkinsForm: React.FC<JenkinsFormProps> = ({
     jobName: '',
     buildNumber: '',
   });
+  const [includeRepoContext, setIncludeRepoContext] = useState(false);
 
   // Populate form with saved settings
   useEffect(() => {
@@ -133,7 +134,15 @@ const JenkinsForm: React.FC<JenkinsFormProps> = ({
         jobName: config.jobName,
         buildNumber: config.buildNumber,
       };
-      const results = await analyzeJenkinsBuild(jenkinsConfig, repoUrl);
+
+      const repositoryConfig = repoUrl?.trim() ? {
+        url: repoUrl.trim(),
+        branch: branch?.trim() || undefined,
+        commit: commit?.trim() || undefined,
+        includeContext: includeRepoContext
+      } : undefined;
+
+      const results = await analyzeJenkinsBuild(jenkinsConfig, repositoryConfig);
       onAnalysisComplete(results);
     } catch (error) {
       onAnalysisError(error instanceof Error ? error.message : 'Failed to analyze Jenkins build');
@@ -287,9 +296,25 @@ const JenkinsForm: React.FC<JenkinsFormProps> = ({
         </div>
       </div>
 
+      {/* Repository Context Option */}
+      {isFormValid && repoUrl && (
+        <div className="flex items-center space-x-2 pt-4 border-t border-gray-200 dark:border-gray-700">
+          <input
+            type="checkbox"
+            id="includeRepoContextJenkins"
+            checked={includeRepoContext}
+            onChange={(e) => setIncludeRepoContext(e.target.checked)}
+            className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:focus:ring-primary-400"
+          />
+          <label htmlFor="includeRepoContextJenkins" className="text-sm text-gray-700 dark:text-gray-300">
+            Include repository source code in analysis (slower but more accurate)
+          </label>
+        </div>
+      )}
+
       {/* Analyze Button */}
       {isFormValid && (
-        <div className="flex justify-end pt-4 border-t border-gray-200">
+        <div className="flex justify-end pt-4 border-t border-gray-200 dark:border-gray-700">
           <button
             onClick={handleAnalyze}
             className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors"

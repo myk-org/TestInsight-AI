@@ -21,6 +21,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
   onAnalysisError,
 }) => {
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  const [includeRepoContext, setIncludeRepoContext] = useState(false);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     // Filter for XML files
@@ -59,7 +60,15 @@ const FileUpload: React.FC<FileUploadProps> = ({
 
     try {
       onAnalysisStart();
-      const results = await analyzeXMLFiles(uploadedFiles, repoUrl);
+
+      const repositoryConfig = repoUrl?.trim() ? {
+        url: repoUrl.trim(),
+        branch: branch?.trim() || undefined,
+        commit: commit?.trim() || undefined,
+        includeContext: includeRepoContext
+      } : undefined;
+
+      const results = await analyzeXMLFiles(uploadedFiles, repositoryConfig);
       onAnalysisComplete(results);
     } catch (error) {
       onAnalysisError(error instanceof Error ? error.message : 'Failed to analyze files');
@@ -144,6 +153,22 @@ const FileUpload: React.FC<FileUploadProps> = ({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Repository Context Option */}
+      {uploadedFiles.length > 0 && repoUrl && (
+        <div className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            id="includeRepoContext"
+            checked={includeRepoContext}
+            onChange={(e) => setIncludeRepoContext(e.target.checked)}
+            className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:focus:ring-primary-400"
+          />
+          <label htmlFor="includeRepoContext" className="text-sm text-gray-700 dark:text-gray-300">
+            Include repository source code in analysis (slower but more accurate)
+          </label>
         </div>
       )}
 

@@ -1,6 +1,8 @@
 """AI analyzer service using Google Gemini via ai_api.py."""
 
 import json
+import re
+from pathlib import Path
 from typing import Any
 
 from backend.models.schemas import (
@@ -60,11 +62,22 @@ class AIAnalyzer:
         context_parts = []
 
         # Add the main text content
-        context_parts.append(f"Text Content to Analyze:\n{request.text}...")
+        context_parts.append(f"Text Content to Analyze:\n{request.text}")
 
         # Add custom context if provided
         if request.custom_context:
             context_parts.append(f"Additional Context:\n{request.custom_context}")
+
+        # Add repository source code context if available
+        if request.include_repository_context:
+            if _repo_path := getattr(request, "cloned_repo_path", ""):
+                repo_files = self._extract_relevant_repository_files(
+                    repo_path=Path(_repo_path), failure_text=request.text
+                )
+                if repo_files:
+                    context_parts.append("Repository Source Code Context:")
+                    for file_path, content in repo_files:
+                        context_parts.append(f"\n--- {file_path} ---\n{content}")
 
         return "\n\n".join(context_parts)
 
@@ -213,3 +226,68 @@ class AIAnalyzer:
             formatted.append(f"- {insight.title} ({insight.severity.value})")
 
         return "\n".join(formatted)
+
+    def _extract_relevant_repository_files(self, repo_path: Path, failure_text: str) -> list[tuple[str, str]]:
+        """Extract 3-5 most relevant files for AI analysis.
+
+        Args:
+            repo_path: Path to cloned repository
+            failure_text: Text containing failure information
+
+        Returns:
+            List of (file_path, content) tuples
+        """
+        files = []
+
+        # 2. Test files mentioned in failure output
+        test_file_patterns = [
+            r"(\w+\.py)::",  # pytest: test_file.py::test_function
+            r"(\w+\.py)",  # Python files
+            r"(\w+\.test\.js)",
+            r"(\w+\.spec\.js)",  # JavaScript test files
+            r"(\w+Test\.java)",  # Java test files
+            r"(\w+_test\.go)",  # Go test files
+        ]
+
+        for pattern in test_file_patterns:
+            matches = re.findall(pattern, failure_text)
+            for match in matches:
+                test_file = match if isinstance(match, str) else match[0]
+                test_file = test_file.split("::")[0] if "::" in test_file else test_file
+                file_path = self._find_file_in_repo(repo_path, test_file)
+                if file_path and file_path.exists():
+                    try:
+                        content = file_path.read_text(encoding="utf-8")
+                        relative_path = str(file_path.relative_to(repo_path))
+                        files.append((relative_path, content))
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+
+        return files
+
+    def _find_file_in_repo(self, repo_path: Path, filename: str) -> Path | None:
+        """Find file in repository by name.
+
+        Args:
+            repo_path: Path to repository root
+            filename: Name of file to find
+
+        Returns:
+            Path to file if found, None otherwise
+        """
+        try:
+            # Use glob to find the file, limiting search depth for performance
+            for file_path in repo_path.rglob(filename):
+                if file_path.is_file():
+                    # Skip files in common ignore directories
+                    path_parts = file_path.parts
+                    if any(
+                        ignore_dir in path_parts
+                        for ignore_dir in [".git", "node_modules", "__pycache__", ".venv", "venv", "target"]
+                    ):
+                        continue
+                    return file_path
+        except (OSError, PermissionError):
+            # Handle potential filesystem errors
+            pass
+        return None

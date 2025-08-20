@@ -108,6 +108,11 @@ class AnalysisRequest(BaseModel):
 
     text: str = Field(..., description="Text content to analyze (logs, junit xml, etc.)")
     custom_context: str | None = Field(None, description="Additional context")
+    repository_url: str | None = Field(None, description="GitHub repository URL for code context")
+    repository_branch: str | None = Field(None, description="Repository branch to analyze")
+    repository_commit: str | None = Field(None, description="Repository commit hash to analyze")
+    include_repository_context: bool = Field(False, description="Include repository source code in analysis")
+    cloned_repo_path: str | None = Field(None, description="Path to cloned repository for source code analysis")
 
 
 class AnalysisResponse(BaseModel):
