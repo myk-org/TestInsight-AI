@@ -112,11 +112,11 @@ async def test_service_connection(service: str) -> ConnectionTestResult:
     try:
         settings_service = SettingsService()
         settings = settings_service.get_settings()
-        connection_testers = ServiceConnectionTesters()
+        service_config = ServiceConnectionTesters()
 
         if service == "jenkins":
             try:
-                connection_testers.test_jenkins_connection(
+                service_config.test_jenkins_connection(
                     url=settings.jenkins.url or "",
                     username=settings.jenkins.username or "",
                     password=settings.jenkins.api_token or "",
@@ -138,7 +138,7 @@ async def test_service_connection(service: str) -> ConnectionTestResult:
 
         elif service == "github":
             try:
-                connection_testers.test_github_connection(token=settings.github.token or "")
+                service_config.test_github_connection(token=settings.github.token or "")
                 return ConnectionTestResult(
                     service="github",
                     success=True,
@@ -155,7 +155,7 @@ async def test_service_connection(service: str) -> ConnectionTestResult:
 
         elif service == "ai":
             try:
-                connection_testers.test_ai_connection()
+                service_config.test_ai_connection()
                 return ConnectionTestResult(
                     service="ai",
                     success=True,
@@ -196,11 +196,11 @@ async def test_service_connection_with_config(request: TestConnectionWithParamsR
     try:
         service = request.service.lower()
         config = request.config
-        connection_testers = ServiceConnectionTesters()
+        service_config = ServiceConnectionTesters()
 
         if service == "jenkins":
             try:
-                connection_testers.test_jenkins_connection(
+                service_config.test_jenkins_connection(
                     url=config.get("url", ""),
                     username=config.get("username", ""),
                     password=config.get("api_token", ""),
@@ -222,7 +222,7 @@ async def test_service_connection_with_config(request: TestConnectionWithParamsR
 
         elif service == "github":
             try:
-                connection_testers.test_github_connection(token=config.get("token", ""))
+                service_config.test_github_connection(token=config.get("token", ""))
                 return ConnectionTestResult(
                     service="github",
                     success=True,
@@ -239,7 +239,7 @@ async def test_service_connection_with_config(request: TestConnectionWithParamsR
 
         elif service == "ai":
             try:
-                connection_testers.test_ai_connection_with_config(config)
+                service_config.test_ai_connection()
                 return ConnectionTestResult(
                     service="ai",
                     success=True,

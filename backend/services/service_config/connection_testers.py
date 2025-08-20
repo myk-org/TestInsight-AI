@@ -140,12 +140,8 @@ class ServiceConnectionTesters(BaseServiceConfig):
             if not api_key or not api_key.strip():
                 raise ValueError("AI service is not configured. Please provide a Gemini API key.")
 
-            # Create AI client directly with test credentials
-            from backend.services.ai_analyzer import AIAnalyzer
-            from backend.services.gemini_api import GeminiClient
-
-            gemini_client = GeminiClient(api_key=api_key)
-            AIAnalyzer(client=gemini_client)
+            creators = ServiceClientCreators()
+            creators.create_configured_ai_client(api_key=api_key)
 
             return True
 
