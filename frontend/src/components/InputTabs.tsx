@@ -133,102 +133,111 @@ const InputTabs: React.FC<InputTabsProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* System Prompt */}
-      <div>
-        <label htmlFor="system-prompt" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          System Prompt (Optional)
-        </label>
-        <textarea
-          id="system-prompt"
-          rows={3}
-          value={systemPrompt}
-          onChange={(e) => setSystemPrompt(e.target.value)}
-          placeholder="e.g., You are a senior software engineer specializing in test failures."
-          className="w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:focus:ring-primary-400 dark:focus:border-primary-400 border-gray-300 dark:border-gray-600"
-        />
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-          Provide a custom system prompt to guide the AI analysis.
-        </p>
-      </div>
-
-      {/* Repository Configuration - Always Visible */}
-      <div className="space-y-4">
-        <div>
-          <label htmlFor="repo-url" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            GitHub Repository URL (Optional)
-          </label>
-          <input
-            type="text"
-            id="repo-url"
-            value={repoUrl}
-            onChange={(e) => handleRepoUrlChange(e.target.value)}
-            placeholder="https://github.com/user/repository.git"
-            className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:focus:ring-primary-400 dark:focus:border-primary-400 ${
-              repoUrl && !isValidUrl
-                ? 'border-red-300 dark:border-red-600'
-                : 'border-gray-300 dark:border-gray-600'
-            }`}
+      {/* Collapsible System Prompt */}
+      <details className="group">
+        <summary className="flex items-center justify-between w-full cursor-pointer text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">
+          <span>System Prompt (Optional)</span>
+          <svg className="w-5 h-5 transform transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </summary>
+        <div className="mt-4">
+          <textarea
+            id="system-prompt"
+            rows={3}
+            value={systemPrompt}
+            onChange={(e) => setSystemPrompt(e.target.value)}
+            placeholder="e.g., You are a senior software engineer specializing in test failures."
+            className="w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:focus:ring-primary-400 dark:focus:border-primary-400 border-gray-300 dark:border-gray-600"
           />
-          {repoUrl && !isValidUrl && (
-            <p className="text-xs text-red-600 dark:text-red-400 mt-1">
-              Please enter a valid GitHub HTTPS URL (e.g., https://github.com/user/repo.git)
-            </p>
-          )}
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            Provide a custom system prompt to guide the AI analysis.
+          </p>
         </div>
+      </details>
 
-        {/* Branch and Commit inputs - only show when repo URL is provided */}
-        {repoUrl && isValidUrl && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="branch" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Branch
-              </label>
-              <input
-                type="text"
-                id="branch"
-                value={branch}
-                onChange={(e) => handleBranchChange(e.target.value)}
-                placeholder="main"
-                disabled={!!commit}
-                className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:focus:ring-primary-400 dark:focus:border-primary-400 border-gray-300 dark:border-gray-600 ${
-                  commit ? 'opacity-50 cursor-not-allowed' : ''
-                }`}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="commit" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Commit Hash
-              </label>
-              <input
-                type="text"
-                id="commit"
-                value={commit}
-                onChange={(e) => handleCommitChange(e.target.value)}
-                placeholder="abc123..."
-                disabled={!!branch}
-                className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:focus:ring-primary-400 dark:focus:border-primary-400 border-gray-300 dark:border-gray-600 ${
-                  branch ? 'opacity-50 cursor-not-allowed' : ''
-                }`}
-              />
-            </div>
+      {/* Collapsible Repository Configuration */}
+      <details className="group">
+        <summary className="flex items-center justify-between w-full cursor-pointer text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">
+          <span>GitHub Repository URL (Optional)</span>
+          <svg className="w-5 h-5 transform transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </summary>
+        <div className="mt-4 space-y-4">
+          <div>
+            <input
+              type="text"
+              id="repo-url"
+              value={repoUrl}
+              onChange={(e) => handleRepoUrlChange(e.target.value)}
+              placeholder="https://github.com/user/repository.git"
+              className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:focus:ring-primary-400 dark:focus:border-primary-400 ${
+                repoUrl && !isValidUrl
+                  ? 'border-red-300 dark:border-red-600'
+                  : 'border-gray-300 dark:border-gray-600'
+              }`}
+            />
+            {repoUrl && !isValidUrl && (
+              <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                Please enter a valid GitHub HTTPS URL (e.g., https://github.com/user/repo.git)
+              </p>
+            )}
           </div>
-        )}
 
+          {/* Branch and Commit inputs - only show when repo URL is provided */}
+          {repoUrl && isValidUrl && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="branch" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Branch
+                </label>
+                <input
+                  type="text"
+                  id="branch"
+                  value={branch}
+                  onChange={(e) => handleBranchChange(e.target.value)}
+                  placeholder="main"
+                  disabled={!!commit}
+                  className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:focus:ring-primary-400 dark:focus:border-primary-400 border-gray-300 dark:border-gray-600 ${
+                    commit ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                />
+              </div>
 
-        <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
-          <p>Provide GitHub repository details to get more accurate code suggestions.</p>
-          <p><strong>Note:</strong> Only GitHub HTTPS URLs are supported. Branch and commit are optional.</p>
-
-          <details className="mt-2">
-            <summary className="cursor-pointer hover:text-gray-700 dark:hover:text-gray-300">Examples</summary>
-            <div className="mt-1 pl-4 space-y-1 font-mono text-xs">
-              <div>https://github.com/user/repo.git</div>
-              <div>https://github.com/user/repository</div>
+              <div>
+                <label htmlFor="commit" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Commit Hash
+                </label>
+                <input
+                  type="text"
+                  id="commit"
+                  value={commit}
+                  onChange={(e) => handleCommitChange(e.target.value)}
+                  placeholder="abc123..."
+                  disabled={!!branch}
+                  className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:focus:ring-primary-400 dark:focus:border-primary-400 border-gray-300 dark:border-gray-600 ${
+                    branch ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                />
+              </div>
             </div>
-          </details>
+          )}
+
+          <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+            <p>Provide GitHub repository details to get more accurate code suggestions.</p>
+            <p><strong>Note:</strong> Only GitHub HTTPS URLs are supported. Branch and commit are optional.</p>
+
+            <details className="mt-2">
+              <summary className="cursor-pointer hover:text-gray-700 dark:hover:text-gray-300">Examples</summary>
+              <div className="mt-1 pl-4 space-y-1 font-mono text-xs">
+                <div>https://github.com/user/repo.git</div>
+                <div>https://github.com/user/repository</div>
+              </div>
+            </details>
+          </div>
         </div>
-      </div>
+      </details>
 
       {/* Tabs */}
       <div>
@@ -260,7 +269,7 @@ const InputTabs: React.FC<InputTabsProps> = ({
         </div>
 
         {/* Tab Descriptions */}
-        <div className="mt-4">
+        <div className="mt-4 h-10">
           {tabs.map((tab) => (
             <div
               key={tab.id}
