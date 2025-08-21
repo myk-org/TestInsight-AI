@@ -55,3 +55,5 @@ FAKE_LONG_API_KEY = "AIzaSyTooLongExample123456789012345678901234567890123456789
 FAKE_SHORT_TOKEN = "fake_token_123456"  # pragma: allowlist secret
 FAKE_PADDED_TOKEN = "  fake_token_123  "  # pragma: allowlist secret
 FAKE_SENSITIVE_TOKEN = "fake_sensitive_token_123"  # pragma: allowlist secret
+FAKE_OLD_TOKEN = "old_token"  # pragma: allowlist secret
+FAKE_USER1_TOKEN = "token1"  # pragma: allowlist secret
