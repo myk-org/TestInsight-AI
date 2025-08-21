@@ -13,6 +13,7 @@ from backend.models.schemas import (
     SettingsUpdate,
     JenkinsSettings,
     AISettings,
+    GitHubSettings,
 )
 from backend.services.security_utils import SettingsValidator
 from backend.tests.conftest import (
@@ -140,7 +141,10 @@ class TestSettingsService:
                         url="https://new-jenkins.example.com",
                         username="newuser",
                         api_token="new_token_456",  # pragma: allowlist secret
-                    )
+                        verify_ssl=True,
+                    ),
+                    github=None,
+                    ai=None,
                 )
 
                 result = service.update_settings(update)
@@ -162,13 +166,15 @@ class TestSettingsService:
 
                 update = SettingsUpdate(
                     jenkins=JenkinsSettings(
-                        url="https://jenkins.example.com", username="user1", api_token="token1"
+                        url="https://jenkins.example.com", username="user1", api_token="token1", verify_ssl=True
                     ),  # pragma: allowlist secret
                     ai=AISettings(
                         gemini_api_key=FAKE_NEW_API_KEY,
                         model="gemini-1.5-pro",
                         temperature=0.9,  # pragma: allowlist secret
+                        max_tokens=4096,
                     ),  # pragma: allowlist secret
+                    github=None,
                 )
 
                 result = service.update_settings(update)
@@ -210,7 +216,9 @@ class TestSettingsService:
                         username="olduser",  # Must provide to preserve
                         api_token="old_token",  # Must provide to preserve
                         verify_ssl=False,  # Must provide to preserve
-                    )
+                    ),
+                    github=None,
+                    ai=None,
                 )
 
                 result = service.update_settings(update)
@@ -225,8 +233,14 @@ class TestSettingsService:
     def test_reset_settings(self):
         """Test reset_settings creates default settings."""
         fake_existing = {
-            "jenkins": {"url": "https://old.com", "username": "user"},
-            "ai": {"gemini_api_key": "old_key"},  # pragma: allowlist secret
+            "jenkins": {"url": "https://old.com", "username": "user", "api_token": "old_token", "verify_ssl": True},
+            "github": {"token": "old_token"},
+            "ai": {
+                "gemini_api_key": "old_key",
+                "model": "old_model",
+                "temperature": 0.5,
+                "max_tokens": 1024,
+            },  # pragma: allowlist secret
         }  # pragma: allowlist secret
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -561,7 +575,12 @@ class TestSettingsService:
             with patch("backend.services.settings_service.SettingsEncryption", return_value=None):
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=False)
 
-                settings = AppSettings(last_updated=datetime.now())
+                settings = AppSettings(
+                    last_updated=datetime.now(),
+                    jenkins=JenkinsSettings(url=None, username=None, api_token=None, verify_ssl=True),
+                    github=GitHubSettings(token=None),
+                    ai=AISettings(gemini_api_key=None, model="", temperature=0.7, max_tokens=4096),
+                )
                 service._save_settings(settings)
 
                 # Should be able to load back without errors
@@ -582,7 +601,12 @@ class TestSettingsService:
             ):  # Capture print statements
                 service = SettingsService(settings_file=str(settings_file), enable_encryption=True)
 
-                settings = AppSettings()
+                settings = AppSettings(
+                    last_updated=datetime.now(),
+                    jenkins=JenkinsSettings(url=None, username=None, api_token=None, verify_ssl=True),
+                    github=GitHubSettings(token=None),
+                    ai=AISettings(gemini_api_key=None, model="", temperature=0.7, max_tokens=4096),
+                )
                 settings.jenkins.api_token = "test_token"
 
                 # Should not raise exception, but print warning

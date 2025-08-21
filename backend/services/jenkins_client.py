@@ -107,15 +107,6 @@ class JenkinsClient(jenkins.Jenkins):
         matching_jobs.sort(key=lambda x: x[1])
         return [job for job, score in matching_jobs]
 
-    def get_job_names(self) -> list[str]:
-        """Get list of all job names for dropdown.
-
-        Returns:
-            List of job names
-        """
-        jobs = self.list_jobs()
-        return [job.get("name", "") for job in jobs if job.get("name")]
-
     def get_job_builds(self, job_name: str, limit: int = 10) -> list[dict[str, Any]]:
         """Get recent builds for a job.
 

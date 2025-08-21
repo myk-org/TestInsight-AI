@@ -220,6 +220,7 @@ class TestGeminiClient:
             assert result.success is True
             assert result.total_count == 0
             assert len(result.models) == 0
+            assert result.message is not None
             assert "0 models" in result.message
 
     @patch("backend.services.gemini_api.genai.Client")

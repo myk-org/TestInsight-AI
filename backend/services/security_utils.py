@@ -36,7 +36,7 @@ class SettingsEncryption:
         key = base64.urlsafe_b64encode(kdf.derive(self.password.encode() if self.password else b"default"))
         return Fernet(key)
 
-    def encrypt(self, data: str) -> str:
+    def encrypt(self, data: str | None) -> str | None:
         """Encrypt sensitive data.
 
         Args:
@@ -51,7 +51,7 @@ class SettingsEncryption:
         encrypted = self._fernet.encrypt(data.encode())
         return base64.urlsafe_b64encode(encrypted).decode()
 
-    def decrypt(self, encrypted_data: str) -> str:
+    def decrypt(self, encrypted_data: str | None) -> str | None:
         """Decrypt sensitive data.
 
         Args:
@@ -71,7 +71,7 @@ class SettingsEncryption:
             # If decryption fails, assume data is not encrypted (for backwards compatibility)
             return encrypted_data
 
-    def is_encrypted(self, data: str) -> bool:
+    def is_encrypted(self, data: str | None) -> bool:
         """Check if data appears to be encrypted.
 
         Args:
@@ -99,7 +99,7 @@ class InputSanitizer:
     """Input sanitization utilities."""
 
     @staticmethod
-    def sanitize_url(url: str) -> str:
+    def sanitize_url(url: str | None) -> str | None:
         """Sanitize URL input.
 
         Args:
@@ -128,7 +128,7 @@ class InputSanitizer:
         return url
 
     @staticmethod
-    def sanitize_token(token: str) -> str:
+    def sanitize_token(token: str | None) -> str | None:
         """Sanitize token/API key input.
 
         Args:
@@ -150,7 +150,7 @@ class InputSanitizer:
         return token
 
     @staticmethod
-    def sanitize_username(username: str) -> str:
+    def sanitize_username(username: str | None) -> str | None:
         """Sanitize username input.
 
         Args:
@@ -176,7 +176,7 @@ class SettingsValidator:
     """Enhanced settings validation with security checks."""
 
     @staticmethod
-    def validate_jenkins_url(url: str) -> list[str]:
+    def validate_jenkins_url(url: str | None) -> list[str]:
         """Validate Jenkins URL with security checks.
 
         Args:
@@ -191,7 +191,10 @@ class SettingsValidator:
             return errors
 
         try:
-            url = InputSanitizer.sanitize_url(url)
+            sanitized_url = InputSanitizer.sanitize_url(url)
+            if sanitized_url is None:
+                return errors
+            url = sanitized_url
         except ValueError as e:
             errors.append(str(e))
             return errors
@@ -212,7 +215,7 @@ class SettingsValidator:
         return errors
 
     @staticmethod
-    def validate_github_token(token: str) -> list[str]:
+    def validate_github_token(token: str | None) -> list[str]:
         """Validate GitHub token format.
 
         Args:
@@ -227,7 +230,10 @@ class SettingsValidator:
             return errors
 
         try:
-            token = InputSanitizer.sanitize_token(token)
+            sanitized_token = InputSanitizer.sanitize_token(token)
+            if sanitized_token is None:
+                return errors
+            token = sanitized_token
         except ValueError as e:
             errors.append(str(e))
             return errors
@@ -255,7 +261,7 @@ class SettingsValidator:
         return errors
 
     @staticmethod
-    def validate_gemini_api_key(api_key: str) -> list[str]:
+    def validate_gemini_api_key(api_key: str | None) -> list[str]:
         """Validate Gemini API key format.
 
         Args:
@@ -270,7 +276,10 @@ class SettingsValidator:
             return errors
 
         try:
-            api_key = InputSanitizer.sanitize_token(api_key)
+            sanitized_api_key = InputSanitizer.sanitize_token(api_key)
+            if sanitized_api_key is None:
+                return errors
+            api_key = sanitized_api_key
         except ValueError as e:
             errors.append(str(e))
             return errors

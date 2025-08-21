@@ -305,42 +305,6 @@ class TestJenkinsClient:
                 # Should be sorted by relevance: exact, starts_with, contains
                 assert result[0]["name"] == "test-exact"
 
-    def test_get_job_names_success(self):
-        """Test get_job_names returns list of job names."""
-        with patch("jenkins.Jenkins.__init__") as mock_jenkins_init:
-            mock_jenkins_init.return_value = None
-
-            client = JenkinsClient(
-                url="https://fake-jenkins.example.com",
-                username="testuser",
-                password="fake_token_123",  # pragma: allowlist secret
-            )
-
-            fake_jobs = [
-                {"name": "test-job-1", "color": "blue"},
-                {"name": "test-job-2", "color": "red"},
-                {"color": "blue"},  # Job without name
-            ]
-
-            with patch.object(client, "list_jobs", return_value=fake_jobs):
-                result = client.get_job_names()
-                assert result == ["test-job-1", "test-job-2"]
-
-    def test_get_job_names_empty_list(self):
-        """Test get_job_names with empty job list."""
-        with patch("jenkins.Jenkins.__init__") as mock_jenkins_init:
-            mock_jenkins_init.return_value = None
-
-            client = JenkinsClient(
-                url="https://fake-jenkins.example.com",
-                username="testuser",
-                password="fake_token_123",  # pragma: allowlist secret
-            )
-
-            with patch.object(client, "list_jobs", return_value=[]):
-                result = client.get_job_names()
-                assert result == []
-
     def test_get_job_builds_success(self):
         """Test get_job_builds returns build details."""
         with patch("jenkins.Jenkins.__init__") as mock_jenkins_init:

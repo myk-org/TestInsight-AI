@@ -10,6 +10,9 @@ from backend.models.schemas import (
     AppSettings,
     GeminiModelInfo,
     GeminiModelsResponse,
+    JenkinsSettings,
+    GitHubSettings,
+    AISettings,
 )
 from backend.services.git_client import GitRepositoryError
 from backend.tests.conftest import (
@@ -242,51 +245,6 @@ class TestGitEndpoints:
         assert response.status_code == 400
         assert "Git error" in response.json()["detail"]
 
-    @patch("pathlib.Path.exists")
-    @patch("pathlib.Path.read_text")
-    def test_get_file_content_success(self, mock_read_text, mock_exists, client):
-        """Test successful file content retrieval."""
-        mock_exists.return_value = True
-        mock_read_text.return_value = "Fake file content"
-
-        response = client.post(
-            "/api/v1/git/file-content",
-            data={"file_path": "README.md", "cloned_path": FAKE_REPO_PATH},
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["file_path"] == "README.md"
-        assert data["content"] == "Fake file content"
-        assert data["cloned_path"] == FAKE_REPO_PATH
-
-    @patch("pathlib.Path.exists")
-    def test_get_file_content_repo_not_found(self, mock_exists, client):
-        """Test file content retrieval when repository path doesn't exist."""
-        mock_exists.return_value = False
-
-        response = client.post(
-            "/api/v1/git/file-content",
-            data={"file_path": "README.md", "cloned_path": "/nonexistent/path"},
-        )
-
-        assert response.status_code == 500  # Due to generic exception handling
-        assert "Cloned repository path not found" in response.json()["detail"]
-
-    @patch("pathlib.Path.exists")
-    def test_get_file_content_file_not_found(self, mock_exists, client):
-        """Test file content retrieval when file doesn't exist."""
-        # Mock repo exists but file doesn't
-        mock_exists.side_effect = lambda: mock_exists.call_count == 1
-
-        response = client.post(
-            "/api/v1/git/file-content",
-            data={"file_path": "nonexistent.txt", "cloned_path": FAKE_REPO_PATH},
-        )
-
-        assert response.status_code == 500  # Due to generic exception handling
-        assert "File not found" in response.json()["detail"]
-
 
 class TestStatusEndpoint:
     """Test the /api/v1/status endpoint."""
@@ -394,6 +352,7 @@ class TestAIModelsEndpoints:
             ],
             total_count=1,
             message="Success",
+            error_details=None,
         )
         mock_gemini_client.get_available_models.return_value = mock_response
 
@@ -504,9 +463,12 @@ class TestSettingsEndpoints:
         mock_settings_service.return_value = mock_service_instance
 
         mock_settings = AppSettings(
-            jenkins={"url": FAKE_JENKINS_URL, "username": FAKE_JENKINS_USERNAME},
-            github={"token": "***masked***"},
-            ai={"gemini_api_key": "***masked***"},
+            jenkins=JenkinsSettings(
+                url=FAKE_JENKINS_URL, username=FAKE_JENKINS_USERNAME, api_token=None, verify_ssl=True
+            ),
+            github=GitHubSettings(token="***masked***"),
+            ai=AISettings(gemini_api_key="***masked***", model="", temperature=0.7, max_tokens=4096),
+            last_updated=None,
         )
         mock_service_instance.get_masked_settings.return_value = mock_settings
 
@@ -525,9 +487,12 @@ class TestSettingsEndpoints:
         mock_settings_service.return_value = mock_service_instance
 
         mock_updated_settings = AppSettings(
-            jenkins={"url": "https://new-jenkins.example.com", "username": "newuser"},
-            github={"token": "***masked***"},
-            ai={"gemini_api_key": "***masked***"},
+            jenkins=JenkinsSettings(
+                url="https://new-jenkins.example.com", username="newuser", api_token=None, verify_ssl=True
+            ),
+            github=GitHubSettings(token="***masked***"),
+            ai=AISettings(gemini_api_key="***masked***", model="", temperature=0.7, max_tokens=4096),
+            last_updated=None,
         )
         mock_service_instance.get_masked_settings.return_value = mock_updated_settings
 
@@ -545,7 +510,12 @@ class TestSettingsEndpoints:
         mock_service_instance = Mock()
         mock_settings_service.return_value = mock_service_instance
 
-        mock_default_settings = AppSettings()
+        mock_default_settings = AppSettings(
+            jenkins=JenkinsSettings(url=None, username=None, api_token=None, verify_ssl=True),
+            github=GitHubSettings(token=None),
+            ai=AISettings(gemini_api_key=None, model="", temperature=0.7, max_tokens=4096),
+            last_updated=None,
+        )
         mock_service_instance.get_masked_settings.return_value = mock_default_settings
 
         response = client.post("/api/v1/settings/reset")
@@ -661,9 +631,14 @@ class TestSettingsEndpoints:
         mock_settings_service.return_value = mock_service_instance
 
         mock_settings = AppSettings(
-            jenkins={"url": FAKE_JENKINS_URL, "username": FAKE_JENKINS_USERNAME},
-            github={"token": FAKE_GITHUB_TOKEN},
-            ai={"gemini_api_key": FAKE_GEMINI_API_KEY},  # pragma: allowlist secret
+            jenkins=JenkinsSettings(
+                url=FAKE_JENKINS_URL, username=FAKE_JENKINS_USERNAME, api_token=None, verify_ssl=True
+            ),
+            github=GitHubSettings(token=FAKE_GITHUB_TOKEN),
+            ai=AISettings(
+                gemini_api_key=FAKE_GEMINI_API_KEY, model="", temperature=0.7, max_tokens=4096
+            ),  # pragma: allowlist secret
+            last_updated=None,
         )
         mock_service_instance.get_settings.return_value = mock_settings
 
@@ -681,13 +656,28 @@ class TestSettingsEndpoints:
 
         # Create a valid backup file content
         backup_data = {
-            "jenkins": {"url": FAKE_JENKINS_URL, "username": FAKE_JENKINS_USERNAME},
+            "jenkins": {
+                "url": FAKE_JENKINS_URL,
+                "username": FAKE_JENKINS_USERNAME,
+                "api_token": None,
+                "verify_ssl": True,
+            },
             "github": {"token": FAKE_GITHUB_TOKEN},
-            "ai": {"gemini_api_key": FAKE_GEMINI_API_KEY},  # pragma: allowlist secret
+            "ai": {
+                "gemini_api_key": FAKE_GEMINI_API_KEY,
+                "model": "",
+                "temperature": 0.7,
+                "max_tokens": 4096,
+            },  # pragma: allowlist secret
         }
         backup_content = json.dumps(backup_data).encode("utf-8")
 
-        mock_restored_settings = AppSettings(**backup_data)
+        mock_restored_settings = AppSettings(
+            jenkins=JenkinsSettings(**backup_data["jenkins"]),
+            github=GitHubSettings(**backup_data["github"]),
+            ai=AISettings(**backup_data["ai"]),
+            last_updated=None,
+        )
         mock_service_instance.get_masked_settings.return_value = mock_restored_settings
 
         # Create a fake file upload (using .txt due to endpoint bug that rejects .json files)
@@ -736,11 +726,6 @@ class TestEndpointValidation:
     def test_git_clone_missing_repo_url(self, client):
         """Test git clone without repository URL."""
         response = client.post("/api/v1/git/clone", data={})
-        assert response.status_code == 422  # Validation error
-
-    def test_git_file_content_missing_parameters(self, client):
-        """Test git file content with missing parameters."""
-        response = client.post("/api/v1/git/file-content", data={"file_path": "test.txt"})
         assert response.status_code == 422  # Validation error
 
     def test_gemini_models_invalid_api_key_length(self, client):
@@ -793,21 +778,6 @@ class TestEndpointErrorHandling:
 
         assert response.status_code == 500
         assert "Clone failed" in response.json()["detail"]
-
-    @patch("pathlib.Path.read_text")
-    @patch("pathlib.Path.exists")
-    def test_git_file_content_read_exception(self, mock_exists, mock_read_text, client):
-        """Test git file content endpoint with read exception."""
-        mock_exists.return_value = True
-        mock_read_text.side_effect = Exception("Read error")
-
-        response = client.post(
-            "/api/v1/git/file-content",
-            data={"file_path": "test.txt", "cloned_path": FAKE_REPO_PATH},
-        )
-
-        assert response.status_code == 500
-        assert "Failed to get file content" in response.json()["detail"]
 
     @patch("backend.api.routers.ai.ServiceClientCreators")
     def test_gemini_models_service_exception(self, mock_service_client_creators, client):

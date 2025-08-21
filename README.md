@@ -24,7 +24,7 @@ AI-powered test failure analysis tool that helps developers quickly diagnose and
 
 ### Advanced Backend Features
 - **Modular Service Architecture**: 8 specialized services (AI, Gemini API, Gemini Models, Jenkins, Git, Settings, Security, Config)
-- **Comprehensive Test Suite**: 254 tests with 85% coverage and multiple test categories
+- **Comprehensive Test Suite**: 236 tests with 80% coverage and multiple test categories
 - **Security-First Design**: AES-256 encryption, input validation, and secure storage
 - **Modern Python Stack**: Python 3.12+, FastAPI, Pydantic, uv package manager
 - **Production Ready**: Docker support, health checks, monitoring, and logging
@@ -54,7 +54,7 @@ TestInsight AI uses a modern two-service architecture:
   - GitHub repository integration (public and private repos)
   - Local JSON-based settings with AES encryption for sensitive data
   - Comprehensive security with input sanitization and validation
-  - Complete test suite with 254 tests achieving 85% coverage
+  - Complete test suite with 236 tests achieving 80% coverage
 - **Frontend Service**: React-based web interface with TypeScript and Tailwind CSS
 
 No external databases or message queues are required - all data is stored locally in encrypted JSON format with automatic backup capabilities.
@@ -278,7 +278,7 @@ npm run lint
 
 ### Comprehensive Test Suite
 
-The backend includes a robust test suite with **254 tests** achieving **85% code coverage**:
+The backend includes a robust test suite with **236 tests** achieving **80% code coverage**:
 
 **Test Categories:**
 - **Unit Tests**: Individual service and component testing
@@ -318,8 +318,8 @@ uv run pytest backend/tests/services/test_ai_analyzer.py -v
 ```
 
 **Test Results:**
-- **254 total tests** across all modules
-- **85% code coverage** with detailed reporting
+- **236 total tests** across all modules
+- **80% code coverage** with detailed reporting
 - **Comprehensive service testing** for all backend components
 - **Integration testing** for complete workflow validation
 

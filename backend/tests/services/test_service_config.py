@@ -41,6 +41,7 @@ class TestServiceConfig:
                 temperature=0.7,
                 max_tokens=4096,
             ),
+            last_updated=None,
         )
 
     @pytest.fixture
@@ -198,7 +199,12 @@ class TestServiceConfig:
     def test_create_configured_ai_client_no_api_key(self, mock_analyzer_class, mock_gemini_class):
         """Test creating AI client with no API key raises error."""
         # Create empty AI settings
-        empty_settings = AppSettings(ai=AISettings(gemini_api_key=""))
+        empty_settings = AppSettings(
+            ai=AISettings(gemini_api_key="", model="", temperature=0.7, max_tokens=4096),
+            jenkins=JenkinsSettings(url="", username="", api_token="", verify_ssl=True),
+            github=GitHubSettings(token=""),
+            last_updated=None,
+        )
 
         with patch("backend.services.service_config.base.SettingsService") as mock_settings_service_class:
             mock_settings_service = Mock()
@@ -370,7 +376,12 @@ class TestServiceConfig:
 
     def test_is_jenkins_not_configured(self):
         """Test Jenkins not configured."""
-        empty_settings = AppSettings(jenkins=JenkinsSettings(url="", username="", api_token=""))
+        empty_settings = AppSettings(
+            jenkins=JenkinsSettings(url="", username="", api_token="", verify_ssl=True),
+            github=GitHubSettings(token=""),
+            ai=AISettings(gemini_api_key="", model="", temperature=0.7, max_tokens=4096),
+            last_updated=None,
+        )
 
         with patch("backend.services.service_config.base.SettingsService") as mock_settings_service_class:
             mock_settings_service = Mock()
@@ -388,7 +399,12 @@ class TestServiceConfig:
 
     def test_is_github_not_configured(self):
         """Test GitHub not configured."""
-        empty_settings = AppSettings(github=GitHubSettings(token=""))
+        empty_settings = AppSettings(
+            github=GitHubSettings(token=""),
+            jenkins=JenkinsSettings(url="", username="", api_token="", verify_ssl=True),
+            ai=AISettings(gemini_api_key="", model="", temperature=0.7, max_tokens=4096),
+            last_updated=None,
+        )
 
         with patch("backend.services.service_config.base.SettingsService") as mock_settings_service_class:
             mock_settings_service = Mock()
@@ -406,7 +422,12 @@ class TestServiceConfig:
 
     def test_is_ai_not_configured(self):
         """Test AI not configured."""
-        empty_settings = AppSettings(ai=AISettings(gemini_api_key=""))
+        empty_settings = AppSettings(
+            ai=AISettings(gemini_api_key="", model="", temperature=0.7, max_tokens=4096),
+            jenkins=JenkinsSettings(url="", username="", api_token="", verify_ssl=True),
+            github=GitHubSettings(token=""),
+            last_updated=None,
+        )
 
         with patch("backend.services.service_config.base.SettingsService") as mock_settings_service_class:
             mock_settings_service = Mock()

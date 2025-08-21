@@ -50,7 +50,14 @@ class TestAIAnalyzer:
             patch.object(analyzer, "_generate_summary", return_value=fake_summary),
             patch.object(analyzer, "_generate_recommendations", return_value=fake_recommendations),
         ):
-            request = AnalysisRequest(text="Test failure logs here", custom_context="Jenkins build #42 failed")
+            request = AnalysisRequest(
+                text="Test failure logs here",
+                custom_context="Jenkins build #42 failed",
+                repository_url=None,
+                repository_branch=None,
+                repository_commit=None,
+                include_repository_context=False,
+            )
 
             result = analyzer.analyze_test_results(request)
 
@@ -65,7 +72,12 @@ class TestAIAnalyzer:
         analyzer = AIAnalyzer(client=mock_client)
 
         request = AnalysisRequest(
-            text="Test failure logs with detailed stack traces here", custom_context="This is from Jenkins build #123"
+            text="Test failure logs with detailed stack traces here",
+            custom_context="This is from Jenkins build #123",
+            repository_url=None,
+            repository_branch=None,
+            repository_commit=None,
+            include_repository_context=False,
         )
 
         result = analyzer._build_analysis_context(request)
@@ -80,7 +92,14 @@ class TestAIAnalyzer:
         mock_client = Mock(spec=GeminiClient)
         analyzer = AIAnalyzer(client=mock_client)
 
-        request = AnalysisRequest(text="Simple test failure")
+        request = AnalysisRequest(
+            text="Simple test failure",
+            custom_context=None,
+            repository_url=None,
+            repository_branch=None,
+            repository_commit=None,
+            include_repository_context=False,
+        )
 
         result = analyzer._build_analysis_context(request)
 
@@ -94,7 +113,14 @@ class TestAIAnalyzer:
         analyzer = AIAnalyzer(client=mock_client)
 
         long_text = "B" * 10000  # 10k characters - using B to avoid conflict with "A" in other text
-        request = AnalysisRequest(text=long_text)
+        request = AnalysisRequest(
+            text=long_text,
+            custom_context=None,
+            repository_url=None,
+            repository_branch=None,
+            repository_commit=None,
+            include_repository_context=False,
+        )
 
         result = analyzer._build_analysis_context(request)
 
@@ -494,7 +520,12 @@ class TestAIAnalyzer:
         analyzer = AIAnalyzer(client=mock_client)
 
         request = AnalysisRequest(
-            text="Test failure logs with timeout errors", custom_context="Jenkins build failed after 30 minutes"
+            text="Test failure logs with timeout errors",
+            custom_context="Jenkins build failed after 30 minutes",
+            repository_url=None,
+            repository_branch=None,
+            repository_commit=None,
+            include_repository_context=False,
         )
 
         result = analyzer.analyze_test_results(request)

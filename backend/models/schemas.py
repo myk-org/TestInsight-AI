@@ -7,15 +7,6 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
-class TestStatus(str, Enum):
-    """Test execution status."""
-
-    PASSED = "passed"
-    FAILED = "failed"
-    SKIPPED = "skipped"
-    ERROR = "error"
-
-
 class Severity(str, Enum):
     """Issue severity levels."""
 
@@ -23,73 +14,6 @@ class Severity(str, Enum):
     MEDIUM = "medium"
     HIGH = "high"
     CRITICAL = "critical"
-
-
-class TestCase(BaseModel):
-    """Individual test case model."""
-
-    name: str = Field(..., description="Test case name")
-    class_name: str = Field(..., description="Test class name")
-    time: float = Field(..., description="Execution time in seconds")
-    status: TestStatus = Field(..., description="Test execution status")
-    message: str | None = Field(None, description="Failure or error message")
-    system_out: str | None = Field(None, description="System output")
-    system_err: str | None = Field(None, description="System error output")
-
-
-class TestSuite(BaseModel):
-    """Test suite model."""
-
-    name: str = Field(..., description="Test suite name")
-    tests: int = Field(..., description="Total number of tests")
-    failures: int = Field(..., description="Number of failed tests")
-    errors: int = Field(..., description="Number of error tests")
-    skipped: int = Field(..., description="Number of skipped tests")
-    time: float = Field(..., description="Total execution time")
-    timestamp: datetime | None = Field(None, description="Execution timestamp")
-    test_cases: list[TestCase] = Field(default_factory=list, description="Test cases")
-
-
-class JUnitReport(BaseModel):
-    """JUnit XML report model."""
-
-    test_suites: list[TestSuite] = Field(..., description="Test suites")
-    total_tests: int = Field(..., description="Total number of tests")
-    total_failures: int = Field(..., description="Total number of failures")
-    total_errors: int = Field(..., description="Total number of errors")
-    total_skipped: int = Field(..., description="Total number of skipped tests")
-    total_time: float = Field(..., description="Total execution time")
-
-
-class LogEntry(BaseModel):
-    """Log entry model."""
-
-    timestamp: datetime = Field(..., description="Log timestamp")
-    level: str = Field(..., description="Log level")
-    message: str = Field(..., description="Log message")
-    source: str | None = Field(None, description="Log source")
-    metadata: dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
-
-
-class BuildInfo(BaseModel):
-    """Jenkins build information."""
-
-    job_name: str = Field(..., description="Jenkins job name")
-    build_number: int = Field(..., description="Build number")
-    status: str = Field(..., description="Build status")
-    timestamp: datetime = Field(..., description="Build timestamp")
-    duration: float = Field(..., description="Build duration in seconds")
-    url: str = Field(..., description="Build URL")
-
-
-class GitCommit(BaseModel):
-    """Git commit information."""
-
-    sha: str = Field(..., description="Commit SHA")
-    author: str = Field(..., description="Commit author")
-    message: str = Field(..., description="Commit message")
-    timestamp: datetime = Field(..., description="Commit timestamp")
-    url: str | None = Field(None, description="Commit URL")
 
 
 class AIInsight(BaseModel):
@@ -112,6 +36,7 @@ class AnalysisRequest(BaseModel):
     repository_branch: str | None = Field(None, description="Repository branch to analyze")
     repository_commit: str | None = Field(None, description="Repository commit hash to analyze")
     include_repository_context: bool = Field(False, description="Include repository source code in analysis")
+    cloned_repo_path: str | None = None
 
 
 class AnalysisResponse(BaseModel):
@@ -120,22 +45,6 @@ class AnalysisResponse(BaseModel):
     insights: list[AIInsight] = Field(default_factory=list, description="AI-generated insights")
     summary: str = Field(..., description="Analysis summary")
     recommendations: list[str] = Field(default_factory=list, description="Recommendations")
-
-
-class FileUpload(BaseModel):
-    """File upload metadata."""
-
-    filename: str = Field(..., description="Original filename")
-    content_type: str = Field(..., description="File content type")
-    size: int = Field(..., description="File size in bytes")
-
-
-class ErrorResponse(BaseModel):
-    """Error response model."""
-
-    error: str = Field(..., description="Error message")
-    details: str | None = Field(None, description="Error details")
-    code: str | None = Field(None, description="Error code")
 
 
 class JenkinsSettings(BaseModel):
@@ -198,12 +107,6 @@ class GeminiModelInfo(BaseModel):
     input_token_limit: int | None = Field(None, description="Maximum input tokens")
     output_token_limit: int | None = Field(None, description="Maximum output tokens")
     supported_generation_methods: list[str] = Field(default_factory=list, description="Supported generation methods")
-
-
-class GeminiModelsRequest(BaseModel):
-    """Request to fetch available Gemini models."""
-
-    api_key: str | None = Field(None, description="Gemini API key (uses settings if not provided)")
 
 
 class GeminiModelsResponse(BaseModel):

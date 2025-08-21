@@ -6,12 +6,8 @@ from backend.models.schemas import (
     AnalysisResponse,
     ConnectionTestResult,
     GeminiModelInfo,
-    GeminiModelsRequest,
     GeminiModelsResponse,
     Severity,
-    TestCase,
-    TestSuite,
-    TestStatus,
     TestConnectionWithParamsRequest,
 )
 from backend.tests.conftest import (
@@ -30,17 +26,6 @@ class TestSeverityEnum:
         assert Severity.MEDIUM.value == "medium"
         assert Severity.HIGH.value == "high"
         assert Severity.CRITICAL.value == "critical"
-
-
-class TestTestStatusEnum:
-    """Test TestStatus enum."""
-
-    def test_test_status_values(self):
-        """Test all test status enum values."""
-        assert TestStatus.PASSED.value == "passed"
-        assert TestStatus.FAILED.value == "failed"
-        assert TestStatus.SKIPPED.value == "skipped"
-        assert TestStatus.ERROR.value == "error"
 
 
 class TestAIInsight:
@@ -79,13 +64,27 @@ class TestAnalysisRequest:
 
     def test_valid_analysis_request(self):
         """Test valid AnalysisRequest creation."""
-        request = AnalysisRequest(text="Fake test results content", custom_context="Fake analysis context")
+        request = AnalysisRequest(
+            text="Fake test results content",
+            custom_context="Fake analysis context",
+            repository_url=None,
+            repository_branch=None,
+            repository_commit=None,
+            include_repository_context=False,
+        )
         assert request.text == "Fake test results content"
         assert request.custom_context == "Fake analysis context"
 
     def test_analysis_request_optional_fields(self):
         """Test AnalysisRequest with optional fields."""
-        request = AnalysisRequest(text="Fake test results")
+        request = AnalysisRequest(
+            text="Fake test results",
+            custom_context=None,
+            repository_url=None,
+            repository_branch=None,
+            repository_commit=None,
+            include_repository_context=False,
+        )
         assert request.text == "Fake test results"
         assert request.custom_context is None
 
@@ -155,20 +154,19 @@ class TestGeminiModelInfo:
 
     def test_gemini_model_info_defaults(self):
         """Test GeminiModelInfo with default values."""
-        model = GeminiModelInfo(name="gemini-test", display_name="Test Model")
+        model = GeminiModelInfo(
+            name="gemini-test",
+            display_name="Test Model",
+            description=None,
+            version=None,
+            input_token_limit=None,
+            output_token_limit=None,
+            supported_generation_methods=[],
+        )
         assert model.description is None or model.description == ""
         assert model.version is None or model.version == ""
         assert model.input_token_limit is None or model.input_token_limit == 0
         assert model.supported_generation_methods == []
-
-
-class TestGeminiModelsRequest:
-    """Test GeminiModelsRequest model."""
-
-    def test_valid_gemini_models_request(self):
-        """Test valid GeminiModelsRequest creation."""
-        request = GeminiModelsRequest(api_key=FAKE_GEMINI_API_KEY)
-        assert request.api_key == FAKE_GEMINI_API_KEY
 
 
 class TestGeminiModelsResponse:
@@ -176,7 +174,17 @@ class TestGeminiModelsResponse:
 
     def test_successful_gemini_models_response(self):
         """Test successful Gemini models response."""
-        models = [GeminiModelInfo(name="gemini-1.5-pro", display_name="Gemini 1.5 Pro")]
+        models = [
+            GeminiModelInfo(
+                name="gemini-1.5-pro",
+                display_name="Gemini 1.5 Pro",
+                description=None,
+                version=None,
+                input_token_limit=None,
+                output_token_limit=None,
+                supported_generation_methods=[],
+            )
+        ]
         response = GeminiModelsResponse(
             success=True, models=models, total_count=1, message="Successfully fetched models", error_details=""
         )
@@ -192,49 +200,6 @@ class TestGeminiModelsResponse:
         assert response.success is False
         assert len(response.models) == 0
         assert response.error_details == "Invalid API key"
-
-
-class TestTestCase:
-    """Test TestCase model."""
-
-    def test_valid_test_case(self):
-        """Test valid TestCase creation."""
-        test_case = TestCase(name="test_fake_function", class_name="TestFakeClass", time=1.23, status=TestStatus.PASSED)
-        assert test_case.name == "test_fake_function"
-        assert test_case.status == TestStatus.PASSED
-        assert test_case.time == 1.23
-
-    def test_test_case_with_failure(self):
-        """Test TestCase with failure message."""
-        test_case = TestCase(
-            name="test_fake_failure",
-            class_name="TestFakeClass",
-            time=0.5,
-            status=TestStatus.FAILED,
-            message="Assertion failed: expected True but got False",
-        )
-        assert test_case.status == TestStatus.FAILED
-        assert test_case.message == "Assertion failed: expected True but got False"
-
-
-class TestTestSuite:
-    """Test TestSuite model."""
-
-    def test_valid_test_suite(self):
-        """Test valid TestSuite creation."""
-        test_cases = [
-            TestCase(name="test_1", class_name="TestClass", time=1.0, status=TestStatus.PASSED),
-            TestCase(name="test_2", class_name="TestClass", time=0.5, status=TestStatus.FAILED),
-        ]
-
-        suite = TestSuite(
-            name="FakeTestSuite", tests=2, failures=1, errors=0, skipped=0, time=1.5, test_cases=test_cases
-        )
-
-        assert suite.name == "FakeTestSuite"
-        assert suite.tests == 2
-        assert suite.failures == 1
-        assert len(suite.test_cases) == 2
 
 
 class TestTestConnectionWithParamsRequest:

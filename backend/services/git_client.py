@@ -65,21 +65,6 @@ class GitClient:
 
         return target_path
 
-    def get_file_content(self, file_path: str) -> str:
-        """Get file content from the repository.
-
-        Args:
-            file_path: Path to file in repository
-
-        Returns:
-            File content
-
-        Raises:
-            FileNotFoundError: If file not found
-        """
-        file_full_path = self.repo_path / file_path
-        return file_full_path.read_text(encoding="utf-8")
-
     def _authenticate_url(self) -> str:
         """Add authentication to repository URL.
 

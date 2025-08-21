@@ -8,15 +8,6 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { SettingsProvider } from './contexts/SettingsContext';
 import './App.css';
 
-export interface TestFailure {
-  test_name: string;
-  error_message: string;
-  ai_analysis: string;
-  suggested_fix: string;
-  file_path?: string;
-  line_number?: number;
-}
-
 export interface AIInsight {
   title: string;
   description: string;
@@ -30,16 +21,6 @@ export interface AnalysisResult {
   insights: AIInsight[];
   summary: string;
   recommendations: string[];
-}
-
-// Legacy interface for backward compatibility
-export interface LegacyAnalysisResult {
-  failures: TestFailure[];
-  summary: {
-    total_failures: number;
-    ai_analysis_available: number;
-    suggested_fixes: number;
-  };
 }
 
 // Navigation component to use React Router hooks

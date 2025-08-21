@@ -1,6 +1,5 @@
 """Git operations endpoints for TestInsight AI."""
 
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Form, HTTPException
@@ -52,42 +51,3 @@ async def clone_repository(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Clone failed: {str(e)}")
-
-
-@router.post("/file-content")
-async def get_file_content(
-    file_path: str = Form(..., description="Path to file in repository"),
-    cloned_path: str = Form(..., description="Path to already cloned repository"),
-) -> dict[str, str]:
-    """Get file content from a git repository using existing cloned repository path.
-
-    Args:
-        file_path: Path to file in repository
-        cloned_path: Path to already cloned repository (from /git/clone response)
-
-    Returns:
-        File content
-    """
-    try:
-        cloned_repo_path = Path(cloned_path)
-        if not cloned_repo_path.exists():
-            raise HTTPException(status_code=404, detail=f"Cloned repository path not found: {cloned_path}")
-
-        file_full_path = cloned_repo_path / file_path
-        if not file_full_path.exists():
-            raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
-
-        content = file_full_path.read_text(encoding="utf-8")
-
-        return {
-            "file_path": file_path,
-            "content": content,
-            "cloned_path": cloned_path,
-        }
-
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except GitRepositoryError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get file content: {str(e)}")
