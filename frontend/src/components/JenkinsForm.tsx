@@ -7,6 +7,7 @@ interface JenkinsFormProps {
   repoUrl: string;
   branch: string;
   commit: string;
+  systemPrompt: string;
   onAnalysisStart: () => void;
   onAnalysisComplete: (results: AnalysisResult) => void;
   onAnalysisError: (error: string) => void;
@@ -24,6 +25,7 @@ const JenkinsForm: React.FC<JenkinsFormProps> = ({
   repoUrl,
   branch,
   commit,
+  systemPrompt,
   onAnalysisStart,
   onAnalysisComplete,
   onAnalysisError,
@@ -142,7 +144,7 @@ const JenkinsForm: React.FC<JenkinsFormProps> = ({
         includeContext: includeRepoContext
       } : undefined;
 
-      const results = await analyzeJenkinsBuild(jenkinsConfig, repositoryConfig);
+      const results = await analyzeJenkinsBuild(jenkinsConfig, repositoryConfig, systemPrompt);
       onAnalysisComplete(results);
     } catch (error) {
       onAnalysisError(error instanceof Error ? error.message : 'Failed to analyze Jenkins build');

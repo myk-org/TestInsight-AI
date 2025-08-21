@@ -62,14 +62,17 @@ export const analyzeXMLFiles = async (
     branch?: string;
     commit?: string;
     includeContext?: boolean;
-  }
+  },
+  systemPrompt?: string
 ): Promise<AnalysisResult> => {
   try {
     // Read all files and combine their content
     const fileContents = await Promise.all(
       files.map(async (file) => {
         const text = await file.text();
-        return `--- File: ${file.name} ---\n${text}\n`;
+        return `--- File: ${file.name} ---
+${text}
+`;
       }),
     );
 
@@ -78,7 +81,7 @@ export const analyzeXMLFiles = async (
       ? `Repository: ${repositoryConfig.url}\nAnalyzing XML test results files: ${files.map((f) => f.name).join(", ")}`
       : `Analyzing XML test results files: ${files.map((f) => f.name).join(", ")}`;
 
-    return await analyzeText(combinedText, customContext, repositoryConfig);
+    return await analyzeText(combinedText, customContext, repositoryConfig, systemPrompt);
   } catch (error) {
     if (error instanceof Error) {
       throw error;
@@ -86,6 +89,7 @@ export const analyzeXMLFiles = async (
     throw new Error("An unexpected error occurred while analyzing XML files");
   }
 };
+
 
 /**
  * Analyze text logs (console output, etc.)
@@ -98,17 +102,19 @@ export const analyzeTextLog = async (
     branch?: string;
     commit?: string;
     includeContext?: boolean;
-  }
+  },
+  systemPrompt?: string
 ): Promise<AnalysisResult> => {
   try {
     const customContext = repositoryConfig?.url
       ? `Repository: ${repositoryConfig.url}\nLog type: ${logType}`
       : `Log type: ${logType}`;
-    return await analyzeText(logText, customContext, repositoryConfig);
+    return await analyzeText(logText, customContext, repositoryConfig, systemPrompt);
   } catch (error) {
     if (error instanceof Error) {
       throw error;
     }
+
     throw new Error("An unexpected error occurred while analyzing log text");
   }
 };
@@ -126,13 +132,18 @@ export const analyzeText = async (
     branch?: string;
     commit?: string;
     includeContext?: boolean;
-  }
+  },
+  systemPrompt?: string
 ): Promise<AnalysisResult> => {
   const formData = new FormData();
   formData.append("text", text);
 
   if (customContext && customContext.trim()) {
     formData.append("custom_context", customContext.trim());
+  }
+
+  if (systemPrompt && systemPrompt.trim()) {
+    formData.append("system_prompt", systemPrompt.trim());
   }
 
   // Add repository context integration
@@ -215,13 +226,18 @@ export const analyzeJenkinsBuild = async (
     branch?: string;
     commit?: string;
     includeContext?: boolean;
-  }
+  },
+  systemPrompt?: string
 ): Promise<AnalysisResult> => {
   try {
     // Use the dedicated Jenkins analysis endpoint
     const formData = new FormData();
     formData.append("job_name", config.jobName);
     formData.append("build_number", config.buildNumber || "");
+
+    if (systemPrompt && systemPrompt.trim()) {
+      formData.append("system_prompt", systemPrompt.trim());
+    }
 
     if (repositoryConfig?.url) {
       formData.append("repo_url", repositoryConfig.url);

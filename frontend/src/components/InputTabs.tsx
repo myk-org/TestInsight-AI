@@ -21,6 +21,7 @@ const InputTabs: React.FC<InputTabsProps> = ({
   const [repoUrl, setRepoUrl] = useState('');
   const [branch, setBranch] = useState('');
   const [commit, setCommit] = useState('');
+  const [systemPrompt, setSystemPrompt] = useState('');
   const [isValidUrl, setIsValidUrl] = useState(true);
 
   useEffect(() => {
@@ -29,11 +30,19 @@ const InputTabs: React.FC<InputTabsProps> = ({
       setRepoUrl(storedRepoUrl);
       validateGitHubUrl(storedRepoUrl);
     }
+    const storedSystemPrompt = localStorage.getItem('systemPrompt');
+    if (storedSystemPrompt) {
+      setSystemPrompt(storedSystemPrompt);
+    }
   }, []);
 
   useEffect(() => {
     localStorage.setItem('repoUrl', repoUrl);
   }, [repoUrl]);
+
+  useEffect(() => {
+    localStorage.setItem('systemPrompt', systemPrompt);
+  }, [systemPrompt]);
 
   const tabs = [
     {
@@ -104,6 +113,7 @@ const InputTabs: React.FC<InputTabsProps> = ({
       repoUrl,
       branch,
       commit,
+      systemPrompt,
       onAnalysisStart,
       onAnalysisComplete,
       onAnalysisError,
@@ -123,6 +133,24 @@ const InputTabs: React.FC<InputTabsProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* System Prompt */}
+      <div>
+        <label htmlFor="system-prompt" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          System Prompt (Optional)
+        </label>
+        <textarea
+          id="system-prompt"
+          rows={3}
+          value={systemPrompt}
+          onChange={(e) => setSystemPrompt(e.target.value)}
+          placeholder="e.g., You are a senior software engineer specializing in test failures."
+          className="w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:focus:ring-primary-400 dark:focus:border-primary-400 border-gray-300 dark:border-gray-600"
+        />
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          Provide a custom system prompt to guide the AI analysis.
+        </p>
+      </div>
+
       {/* Repository Configuration - Always Visible */}
       <div className="space-y-4">
         <div>

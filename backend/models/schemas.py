@@ -32,6 +32,7 @@ class AnalysisRequest(BaseModel):
 
     text: str = Field(..., description="Text content to analyze (logs, junit xml, etc.)")
     custom_context: str | None = Field(None, description="Additional context")
+    system_prompt: str | None = Field(None, description="Custom system prompt for the AI")
     repository_url: str | None = Field(None, description="GitHub repository URL for code context")
     repository_branch: str | None = Field(None, description="Repository branch to analyze")
     repository_commit: str | None = Field(None, description="Repository commit hash to analyze")

@@ -14,6 +14,7 @@ router = APIRouter(prefix="/analyze", tags=["analysis"])
 async def analyze(
     text: str = Form(..., description="Text content to analyze (logs, junit xml, etc.)"),
     custom_context: str | None = Form(None, description="Additional context"),
+    system_prompt: str | None = Form(None, description="Custom system prompt for the AI"),
     repository_url: str | None = Form(None, description="GitHub repository URL for code context"),
     repository_branch: str | None = Form(None, description="Repository branch to analyze"),
     repository_commit: str | None = Form(None, description="Repository commit hash to analyze"),
@@ -43,6 +44,7 @@ async def analyze(
         request = AnalysisRequest(
             text=text,
             custom_context=custom_context,
+            system_prompt=system_prompt,
             repository_url=repository_url,
             repository_branch=repository_branch,
             repository_commit=repository_commit,
@@ -72,6 +74,7 @@ async def analyze_file(
     repository_commit: str | None = Form(None, description="Repository commit hash to analyze"),
     include_repository_context: bool = Form(False, description="Include repository source code in analysis"),
     custom_context: str | None = Form(None, description="Additional context"),
+    system_prompt: str | None = Form(None, description="Custom system prompt for the AI"),
     api_key: str | None = Form(None, description="Gemini API key (uses settings if not provided)"),
 ) -> AnalysisResponse:
     """Analyze uploaded files with AI.
@@ -168,6 +171,7 @@ async def analyze_file(
         request = AnalysisRequest(
             text=combined_text.strip(),
             custom_context=final_context,
+            system_prompt=system_prompt,
             repository_url=repo_url,
             repository_branch=repository_branch,
             repository_commit=repository_commit,
@@ -196,6 +200,7 @@ async def analyze_jenkins_build(
     repository_branch: str | None = Form(None, description="Repository branch to analyze"),
     repository_commit: str | None = Form(None, description="Repository commit hash to analyze"),
     include_repository_context: bool = Form(False, description="Include repository source code in analysis"),
+    system_prompt: str | None = Form(None, description="Custom system prompt for the AI"),
     jenkins_url: str | None = Form(None, description="Jenkins URL (uses settings if not provided)"),
     jenkins_username: str | None = Form(None, description="Jenkins username (uses settings if not provided)"),
     jenkins_password: str | None = Form(None, description="Jenkins API token (uses settings if not provided)"),
@@ -285,6 +290,7 @@ async def analyze_jenkins_build(
         request = AnalysisRequest(
             text=str(test_report) if test_report else "",
             custom_context=final_context,
+            system_prompt=system_prompt,
             repository_url=repo_url,
             repository_branch=repository_branch,
             repository_commit=repository_commit,

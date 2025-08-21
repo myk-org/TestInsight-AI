@@ -6,6 +6,7 @@ interface TextInputProps {
   repoUrl: string;
   branch: string;
   commit: string;
+  systemPrompt: string;
   onAnalysisStart: () => void;
   onAnalysisComplete: (results: AnalysisResult) => void;
   onAnalysisError: (error: string) => void;
@@ -15,6 +16,7 @@ const TextInput: React.FC<TextInputProps> = ({
   repoUrl,
   branch,
   commit,
+  systemPrompt,
   onAnalysisStart,
   onAnalysisComplete,
   onAnalysisError,
@@ -39,7 +41,7 @@ const TextInput: React.FC<TextInputProps> = ({
         includeContext: includeRepoContext
       } : undefined;
 
-      const results = await analyzeTextLog(logText.trim(), logType, repositoryConfig);
+      const results = await analyzeTextLog(logText.trim(), logType, repositoryConfig, systemPrompt);
       onAnalysisComplete(results);
     } catch (error) {
       onAnalysisError(error instanceof Error ? error.message : 'Failed to analyze log text');

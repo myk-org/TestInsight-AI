@@ -7,6 +7,7 @@ interface FileUploadProps {
   repoUrl: string;
   branch: string;
   commit: string;
+  systemPrompt: string;
   onAnalysisStart: () => void;
   onAnalysisComplete: (results: AnalysisResult) => void;
   onAnalysisError: (error: string) => void;
@@ -16,6 +17,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
   repoUrl,
   branch,
   commit,
+  systemPrompt,
   onAnalysisStart,
   onAnalysisComplete,
   onAnalysisError,
@@ -68,7 +70,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
         includeContext: includeRepoContext
       } : undefined;
 
-      const results = await analyzeXMLFiles(uploadedFiles, repositoryConfig);
+      const results = await analyzeXMLFiles(uploadedFiles, repositoryConfig, systemPrompt);
       onAnalysisComplete(results);
     } catch (error) {
       onAnalysisError(error instanceof Error ? error.message : 'Failed to analyze files');
