@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import FileUpload from './FileUpload';
 import TextInput from './TextInput';
 import JenkinsForm from './JenkinsForm';
@@ -22,6 +22,18 @@ const InputTabs: React.FC<InputTabsProps> = ({
   const [branch, setBranch] = useState('');
   const [commit, setCommit] = useState('');
   const [isValidUrl, setIsValidUrl] = useState(true);
+
+  useEffect(() => {
+    const storedRepoUrl = localStorage.getItem('repoUrl');
+    if (storedRepoUrl) {
+      setRepoUrl(storedRepoUrl);
+      validateGitHubUrl(storedRepoUrl);
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('repoUrl', repoUrl);
+  }, [repoUrl]);
 
   const tabs = [
     {

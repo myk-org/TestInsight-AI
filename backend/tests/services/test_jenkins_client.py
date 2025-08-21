@@ -94,39 +94,6 @@ class TestJenkinsClient:
                 with pytest.raises(RequestException):
                     client.is_connected()
 
-    def test_get_build_console_output_success(self):
-        """Test get_build_console_output returns console output."""
-        with patch("jenkins.Jenkins.__init__") as mock_jenkins_init:
-            mock_jenkins_init.return_value = None
-
-            client = JenkinsClient(
-                url="https://fake-jenkins.example.com",
-                username="testuser",
-                password="fake_token_123",  # pragma: allowlist secret
-            )
-
-            fake_output = "Started by user testuser\nBuild successful"
-            with patch.object(client, "get_build_console_output", return_value=fake_output):
-                result = client.get_build_console_output("test-job", 42)
-                assert result == fake_output
-
-    def test_get_build_console_output_failure(self):
-        """Test get_build_console_output handles Jenkins exceptions."""
-        with patch("jenkins.Jenkins.__init__") as mock_jenkins_init:
-            mock_jenkins_init.return_value = None
-
-            client = JenkinsClient(
-                url="https://fake-jenkins.example.com",
-                username="testuser",
-                password="fake_token_123",  # pragma: allowlist secret
-            )
-
-            with patch.object(
-                client, "get_build_console_output", side_effect=jenkins.JenkinsException("Build not found")
-            ):
-                with pytest.raises(jenkins.JenkinsException):
-                    client.get_build_console_output("nonexistent-job", 999)
-
     def test_list_jobs_success(self):
         """Test list_jobs returns job list."""
         with patch("jenkins.Jenkins.__init__") as mock_jenkins_init:

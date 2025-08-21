@@ -142,7 +142,7 @@ def mock_jenkins_client():
         {"name": "test-job-2", "color": "red"},
     ]
     mock_client.get_job_builds.return_value = [{"number": 42, "result": "SUCCESS"}, {"number": 41, "result": "FAILURE"}]
-    mock_client.get_build_console.return_value = "Fake console output"
+
     return mock_client
 
 

@@ -179,33 +179,6 @@ class TestJenkinsEndpoints:
         data = response.json()
         assert data["limit"] == 5
 
-    @patch("backend.api.routers.jenkins.ServiceClientCreators")
-    def test_get_build_console_success(self, mock_service_config, client):
-        """Test successful retrieval of build console output."""
-        mock_jenkins_client = Mock()
-        mock_jenkins_client.is_connected.return_value = True
-        mock_jenkins_client.get_console_output.return_value = "Fake console output"
-        mock_service_config.return_value.create_configured_jenkins_client.return_value = mock_jenkins_client
-
-        response = client.get("/api/v1/jenkins/test-job/42/console")
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["console_output"] == "Fake console output"
-
-    @patch("backend.api.routers.jenkins.ServiceClientCreators")
-    def test_get_build_console_not_found(self, mock_service_config, client):
-        """Test console output when build is not found."""
-        mock_jenkins_client = Mock()
-        mock_jenkins_client.is_connected.return_value = True
-        mock_jenkins_client.get_console_output.return_value = None
-        mock_service_config.return_value.create_configured_jenkins_client.return_value = mock_jenkins_client
-
-        response = client.get("/api/v1/jenkins/test-job/42/console")
-
-        assert response.status_code == 404
-        assert "Console output not found" in response.json()["detail"]
-
 
 class TestGitEndpoints:
     """Test Git-related endpoints."""
@@ -760,11 +733,6 @@ class TestEndpointValidation:
         response = client.get("/api/v1/jenkins/test-job/builds?limit=-1")
         assert response.status_code == 503  # Service unavailable because Jenkins not configured
 
-    def test_jenkins_console_invalid_build_number(self, client):
-        """Test Jenkins console with invalid build number."""
-        response = client.get("/api/v1/jenkins/test-job/abc/console")
-        assert response.status_code == 422  # Validation error
-
     def test_git_clone_missing_repo_url(self, client):
         """Test git clone without repository URL."""
         response = client.post("/api/v1/git/clone", data={})
@@ -815,19 +783,6 @@ class TestEndpointErrorHandling:
 
         assert response.status_code == 500
         assert "Failed to get job builds" in response.json()["detail"]
-
-    @patch("backend.api.routers.jenkins.ServiceClientCreators")
-    def test_jenkins_console_service_exception(self, mock_service_config, client):
-        """Test Jenkins console endpoint with service exception."""
-        mock_jenkins_client = Mock()
-        mock_jenkins_client.is_connected.return_value = True
-        mock_jenkins_client.get_console_output.side_effect = Exception("Service error")
-        mock_service_config.return_value.create_configured_jenkins_client.return_value = mock_jenkins_client
-
-        response = client.get("/api/v1/jenkins/test-job/42/console")
-
-        assert response.status_code == 500
-        assert "Failed to get console output" in response.json()["detail"]
 
     @patch("backend.api.routers.git.ServiceClientCreators")
     def test_git_clone_service_exception(self, mock_service_config, client):

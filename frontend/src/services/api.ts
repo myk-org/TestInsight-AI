@@ -113,32 +113,7 @@ export const analyzeTextLog = async (
   }
 };
 
-/**
- * Get Jenkins build console output
- */
-export const getJenkinsBuildConsole = async (
-  jobName: string,
-  buildNumber: string | number,
-): Promise<string> => {
-  try {
-    const response = await api.get(
-      `/jenkins/${jobName}/${buildNumber}/console`,
-    );
-    return response.data.console_output || "";
-  } catch (error) {
-    if (axios.isAxiosError(error)) {
-      const errorMessage =
-        error.response?.data?.detail ||
-        error.response?.data?.message ||
-        error.message ||
-        "Failed to get Jenkins console output";
-      throw new Error(errorMessage);
-    }
-    throw new Error(
-      "An unexpected error occurred while fetching Jenkins console output",
-    );
-  }
-};
+
 
 /**
  * Analyze text content (replaces analyzeJenkinsBuild)
