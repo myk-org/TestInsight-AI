@@ -38,11 +38,11 @@ class AIAnalyzer:
         context = self._build_analysis_context(request)
 
         # Generate insights using AI
-        insights = self._generate_insights(context)
+        insights = self._generate_insights(context, request.system_prompt)
 
         # Generate summary and recommendations
-        summary = self._generate_summary(context, insights)
-        recommendations = self._generate_recommendations(context, insights)
+        summary = self._generate_summary(context, insights, request.system_prompt)
+        recommendations = self._generate_recommendations(context, insights, request.system_prompt)
 
         return AnalysisResponse(
             insights=insights,
@@ -81,7 +81,7 @@ class AIAnalyzer:
 
         return "\n\n".join(context_parts)
 
-    def _generate_insights(self, context: str) -> list[AIInsight]:
+    def _generate_insights(self, context: str, system_prompt: str | None = None) -> list[AIInsight]:
         """Generate AI insights from context.
 
         Args:
@@ -92,8 +92,7 @@ class AIAnalyzer:
             List of AI insights
         """
         prompt = f"""
-        Analyze the following test results and build information to identify issues, patterns, and improvement opportunities.
-
+        {system_prompt or "Analyze the following test results and build information to identify issues, patterns, and improvement opportunities."}
         Context:
         {context}
 
@@ -138,19 +137,20 @@ class AIAnalyzer:
 
         return [self._create_insight_from_dict(insight) for insight in insights_data]
 
-    def _generate_summary(self, context: str, insights: list[AIInsight]) -> str:
+    def _generate_summary(self, context: str, insights: list[AIInsight], system_prompt: str | None = None) -> str:
         """Generate analysis summary.
 
         Args:
             context: Analysis context
             insights: Generated insights
+            system_prompt: Optional custom system prompt
 
         Returns:
             Summary text
         """
 
         prompt = f"""
-        Based on the following test analysis context and insights, provide a concise summary of the overall situation.
+        {system_prompt or "Based on the following test analysis context and insights, provide a concise summary of the overall situation."}
 
         Context:
         {context}
@@ -165,18 +165,21 @@ class AIAnalyzer:
 
         return result["content"].strip()
 
-    def _generate_recommendations(self, context: str, insights: list[AIInsight]) -> list[str]:
+    def _generate_recommendations(
+        self, context: str, insights: list[AIInsight], system_prompt: str | None = None
+    ) -> list[str]:
         """Generate actionable recommendations.
 
         Args:
             context: Analysis context
             insights: Generated insights
+            system_prompt: Optional custom system prompt
 
         Returns:
             List of recommendations
         """
         prompt = f"""
-        Based on the analysis context and insights, provide specific, actionable recommendations.
+        {system_prompt or "Based on the analysis context and insights, provide specific, actionable recommendations."}
 
         Context Summary:
         {context}
