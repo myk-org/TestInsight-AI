@@ -42,7 +42,10 @@ class JenkinsClient(jenkins.Jenkins):
         Returns:
             True if connected, False otherwise
         """
-        return self.get_version() is not None
+        try:
+            return self.get_version() is not None
+        except Exception:
+            return False
 
     def list_jobs(self, folder_depth: int = 0) -> list[dict[str, Any]]:
         """List all Jenkins jobs.

@@ -84,7 +84,12 @@ class ServiceClientCreators(BaseServiceConfig):
                 "AI service is not configured. Please provide a Gemini API key in settings or as parameter."
             )
 
+        # Instantiate with API key only to preserve existing call expectations in tests
         gemini_client = GeminiClient(api_key=final_api_key)
+        # Thread defaults from settings into the client instance
+        gemini_client.default_model = str(config.get("model") or "gemini-2.5-pro")
+        gemini_client.default_temperature = float(config.get("temperature") or 0.7)
+        gemini_client.default_max_tokens = int(config.get("max_tokens") or 4096)
         return AIAnalyzer(client=gemini_client)
 
     def create_configured_git_client(

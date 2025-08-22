@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useSettings, AppSettings, SettingsUpdate, ConnectionTestResult } from '../contexts/SettingsContext';
-import { validateGeminiApiKey, fetchGeminiModels, getSecretsStatus } from '../services/api';
+import { validateGeminiApiKey, fetchGeminiModels, getSecretsStatus, testConnectionWithConfig } from '../services/api';
 
 interface FormErrors {
   [key: string]: string;
@@ -280,26 +280,11 @@ const Settings: React.FC = () => {
         };
 
         try {
-          const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/v1/settings/test-connection-with-config`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              service: 'ai',
-              config: aiConfig
-            }),
-          });
-
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-          }
-
-          const result = await response.json();
+          const result = await testConnectionWithConfig({ service: 'ai', config: aiConfig });
           modelsResult = {
             success: result.success,
-            models: result.models || [],
-            error: result.error_details || result.message
+            models: (result as any).models || [],
+            error: (result as any).error_details || result.message
           };
         } catch (error) {
           modelsResult = {
@@ -310,7 +295,7 @@ const Settings: React.FC = () => {
       } else {
         // Use backend endpoint to fetch models with saved settings
         try {
-          const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/v1/ai/models`, {
+          const response = await fetch(`${(import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'}/api/v1/ai/models`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -654,22 +639,7 @@ const Settings: React.FC = () => {
     }
 
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/v1/settings/test-connection-with-config`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          service: 'jenkins',
-          config: jenkinsConfig
-        }),
-      });
-
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.detail || `HTTP ${response.status}`);
-      }
-
+      const result = await testConnectionWithConfig({ service: 'jenkins', config: jenkinsConfig });
       return result;
     } catch (error) {
       return {
@@ -695,26 +665,11 @@ const Settings: React.FC = () => {
     try {
       if (githubConfig.token) {
         // Test with new token from form
-        const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/v1/settings/test-connection-with-config`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            service: 'github',
-            config: githubConfig
-          }),
-        });
-
-        const result = await response.json();
-        if (!response.ok) {
-          throw new Error(result.detail || `HTTP ${response.status}`);
-        }
-
+        const result = await testConnectionWithConfig({ service: 'github', config: githubConfig });
         return result;
       } else {
         // Test with existing configured settings
-        const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/v1/settings/test-connection?service=github`, {
+        const response = await fetch(`${(import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'}/api/v1/settings/test-connection?service=github`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -770,7 +725,7 @@ const Settings: React.FC = () => {
         };
 
         try {
-          const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/v1/settings/test-connection-with-config`, {
+          const response = await fetch(`${(import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'}/api/v1/settings/test-connection-with-config`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -800,7 +755,7 @@ const Settings: React.FC = () => {
       } else {
         // Test with existing configured settings (use backend endpoint)
         try {
-          const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/v1/settings/test-connection?service=ai`, {
+          const response = await fetch(`${(import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'}/api/v1/settings/test-connection?service=ai`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -1028,7 +983,7 @@ const Settings: React.FC = () => {
 
                   {restoreFile && (
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-600 dark:text-gray-400 max-w-32 truncate">
+                      <span className="text-xs text-gray-600 dark:text-gray-400 w-32 truncate">
                         {restoreFile.name}
                       </span>
                       <button

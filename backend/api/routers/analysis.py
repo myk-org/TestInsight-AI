@@ -66,7 +66,7 @@ async def analyze(
         raise HTTPException(status_code=500, detail=f"Text analysis failed: {str(e)}")
 
 
-@router.post("-file", response_model=AnalysisResponse)
+@router.post("/file", response_model=AnalysisResponse)
 async def analyze_file(
     files: list[UploadFile] = File(..., description="Files to analyze (json, xml, text, log)"),
     repo_url: str | None = Form(None, description="Repository URL for context"),
@@ -192,7 +192,7 @@ async def analyze_file(
         raise HTTPException(status_code=500, detail=f"File analysis failed: {str(e)}")
 
 
-@router.post("-jenkins", response_model=AnalysisResponse)
+@router.post("/jenkins", response_model=AnalysisResponse)
 async def analyze_jenkins_build(
     job_name: str = Form(..., description="Jenkins job name"),
     build_number: str = Form("", description="Build number (empty for latest)"),

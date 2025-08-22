@@ -63,3 +63,13 @@ repos:
       - id: mypy
         exclude: (tests/)
         additional_dependencies: [types-requests, types-PyYAML, types-colorama]
+
+  # Minimal frontend checks
+  - repo: local
+    hooks:
+      - id: frontend-tests-pre-push
+        name: frontend tests (pre-push)
+        entry: bash -lc 'cd frontend && npm run test -- --run'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

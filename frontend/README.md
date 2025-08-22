@@ -46,11 +46,13 @@ The application will be available at `http://localhost:3000`.
 
 ### Environment Configuration
 
-Create a `.env` file in the `frontend` directory:
+Vite uses `VITE_`-prefixed variables. Create a `.env` in `frontend`:
 
 ```env
-REACT_APP_API_URL=http://localhost:8000
+VITE_API_URL=http://localhost:8000
 ```
+
+For development proxying, you can also configure a Vite server proxy in `vite.config.ts` if needed.
 
 ## Architecture
 

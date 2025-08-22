@@ -2,7 +2,6 @@
 
 import os
 from unittest.mock import Mock, patch
-import pytest
 import jenkins
 from requests.exceptions import RequestException
 
@@ -80,7 +79,7 @@ class TestJenkinsClient:
                 assert client.is_connected() is False
 
     def test_is_connected_exception(self):
-        """Test is_connected raises exception when get_version raises exception."""
+        """Test is_connected handles exception and returns False."""
         with patch("jenkins.Jenkins.__init__") as mock_jenkins_init:
             mock_jenkins_init.return_value = None
 
@@ -91,8 +90,7 @@ class TestJenkinsClient:
             )
 
             with patch.object(client, "get_version", side_effect=RequestException("Connection error")):
-                with pytest.raises(RequestException):
-                    client.is_connected()
+                assert client.is_connected() is False
 
     def test_list_jobs_success(self):
         """Test list_jobs returns job list."""

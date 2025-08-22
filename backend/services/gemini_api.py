@@ -1,6 +1,8 @@
 """Gemini API client using google-genai library."""
 
+import os
 import logging
+import time
 from typing import Any
 
 from google import genai
@@ -14,7 +16,14 @@ logger = logging.getLogger(__name__)
 class GeminiClient:
     """Gemini client for all AI operations using google-genai."""
 
-    def __init__(self, api_key: str):
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        default_model: str | None = None,
+        default_temperature: float | None = None,
+        default_max_tokens: int | None = None,
+    ):
         """Initialize Gemini client with API key.
 
         Args:
@@ -28,6 +37,15 @@ class GeminiClient:
 
         self.api_key = api_key
         self.client = genai.Client(api_key=api_key)
+
+        # Defaults from settings (optional)
+        self.default_model = (default_model or "gemini-2.5-pro").strip()
+        self.default_temperature = default_temperature if default_temperature is not None else 0.7
+        self.default_max_tokens = default_max_tokens if default_max_tokens is not None else 4096
+
+        # Retry/backoff configuration (env-driven)
+        self.retry_attempts = int(os.getenv("GENAI_RETRY_ATTEMPTS", "1"))
+        self.retry_backoff_ms = int(os.getenv("GENAI_RETRY_BACKOFF_MS", "250"))
 
         # Validate connection
         self.validate_connection()
@@ -146,18 +164,39 @@ class GeminiClient:
         Returns:
             Dictionary with generated content or error
         """
-        # Generate content
-        response = self.client.models.generate_content(
-            model=f"models/{model}",
-            contents=[{"parts": [{"text": prompt}]}],
-            config={
-                "temperature": temperature,
-                "max_output_tokens": max_tokens,
-            },
+        # Determine effective parameters using client defaults when appropriate
+        effective_model = (model or self.default_model).strip()
+        effective_temperature = temperature if temperature is not None else self.default_temperature
+        effective_max_tokens = max_tokens if max_tokens is not None else self.default_max_tokens
+
+        # Normalize model to ensure a single 'models/' prefix
+        normalized_model = (
+            effective_model if str(effective_model).startswith("models/") else f"models/{effective_model}"
         )
+
+        # Generate content with basic retry/backoff for transient failures (opt-in via env)
+        attempts = max(1, self.retry_attempts)
+        for attempt in range(1, attempts + 1):
+            try:
+                response = self.client.models.generate_content(
+                    model=normalized_model,
+                    contents=[{"parts": [{"text": prompt}]}],
+                    config={
+                        "temperature": effective_temperature,
+                        "max_output_tokens": effective_max_tokens,
+                    },
+                )
+                break
+            except Exception as e:  # pragma: no cover - exercised via higher-level tests/mocks
+                # Heuristic for transient errors
+                message = str(e).lower()
+                is_transient = any(k in message for k in ["429", "quota", "rate", "timeout", "temporarily"])
+                if attempt >= attempts or not is_transient:
+                    raise
+                time.sleep((self.retry_backoff_ms / 1000.0) * (2 ** (attempt - 1)))
 
         return {
             "success": True,
             "content": response.text if hasattr(response, "text") else str(response),
-            "model": model,
+            "model": effective_model,
         }

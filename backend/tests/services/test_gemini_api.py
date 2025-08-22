@@ -399,7 +399,7 @@ class TestGeminiClient:
             client.generate_content("Test", model="models/gemini-1.5-flash")
 
             mock_client_instance.models.generate_content.assert_called_once_with(
-                model="models/models/gemini-1.5-flash",  # Will be double-prefixed (potential bug)
+                model="models/gemini-1.5-flash",  # Should not be double-prefixed
                 contents=[{"parts": [{"text": "Test"}]}],
                 config={
                     "temperature": 0.7,

@@ -94,7 +94,7 @@ def test_analyze_file_success(client: TestClient):
         mock_service_config.return_value.create_configured_ai_client.return_value = mock_ai_analyzer
 
         files = {"files": ("test.xml", "<testsuite/>", "application/xml")}
-        response = client.post("/api/v1/analyze-file", files=files)
+        response = client.post("/api/v1/analyze/file", files=files)
 
         assert response.status_code == 200
         data = response.json()
@@ -104,28 +104,28 @@ def test_analyze_file_success(client: TestClient):
 def test_analyze_file_invalid_type(client: TestClient):
     """Test file analysis with invalid file type."""
     files = {"files": ("test.pdf", "some content", "application/pdf")}
-    response = client.post("/api/v1/analyze-file", files=files)
+    response = client.post("/api/v1/analyze/file", files=files)
     assert response.status_code == 400
 
 
 def test_analyze_file_no_filename(client: TestClient):
     """Test file analysis with no filename."""
     files = {"files": (None, "some content", "application/xml")}
-    response = client.post("/api/v1/analyze-file", files=files)
+    response = client.post("/api/v1/analyze/file", files=files)
     assert response.status_code == 422
 
 
 def test_analyze_file_empty_content(client: TestClient):
     """Test file analysis with empty content."""
     files = {"files": ("test.xml", "", "application/xml")}
-    response = client.post("/api/v1/analyze-file", files=files)
+    response = client.post("/api/v1/analyze/file", files=files)
     assert response.status_code == 500
 
 
 def test_analyze_file_unicode_error(client: TestClient):
     """Test file analysis with unicode error."""
     files = {"files": ("test.log", b"\x80abc", "text/plain")}
-    response = client.post("/api/v1/analyze-file", files=files)
+    response = client.post("/api/v1/analyze/file", files=files)
     assert response.status_code == 400
 
 
@@ -146,7 +146,7 @@ def test_analyze_jenkins_build_success(client: TestClient):
         mock_service_config.return_value.create_configured_jenkins_client.return_value = mock_jenkins_client
 
         response = client.post(
-            "/api/v1/analyze-jenkins",
+            "/api/v1/analyze/jenkins",
             data={"job_name": "test-job", "build_number": "1"},
         )
 
@@ -163,7 +163,7 @@ def test_analyze_jenkins_build_not_connected(client: TestClient):
         mock_service_config.return_value.create_configured_jenkins_client.return_value = mock_jenkins_client
 
         response = client.post(
-            "/api/v1/analyze-jenkins",
+            "/api/v1/analyze/jenkins",
             data={"job_name": "test-job", "build_number": "1"},
         )
 
@@ -177,7 +177,7 @@ def test_analyze_jenkins_build_invalid_build_number(client: TestClient):
         mock_jenkins_client.is_connected.return_value = True
         mock_service_config.return_value.create_configured_jenkins_client.return_value = mock_jenkins_client
         response = client.post(
-            "/api/v1/analyze-jenkins",
+            "/api/v1/analyze/jenkins",
             data={"job_name": "test-job", "build_number": "abc"},
         )
         assert response.status_code == 400
@@ -192,7 +192,7 @@ def test_analyze_jenkins_build_no_builds_found(client: TestClient):
         mock_service_config.return_value.create_configured_jenkins_client.return_value = mock_jenkins_client
 
         response = client.post(
-            "/api/v1/analyze-jenkins",
+            "/api/v1/analyze/jenkins",
             data={"job_name": "test-job"},
         )
         assert response.status_code == 404
@@ -207,7 +207,7 @@ def test_analyze_jenkins_build_no_build_number_in_latest(client: TestClient):
         mock_service_config.return_value.create_configured_jenkins_client.return_value = mock_jenkins_client
 
         response = client.post(
-            "/api/v1/analyze-jenkins",
+            "/api/v1/analyze/jenkins",
             data={"job_name": "test-job"},
         )
         assert response.status_code == 404
@@ -222,7 +222,7 @@ def test_analyze_jenkins_build_no_test_report(client: TestClient):
         mock_service_config.return_value.create_configured_jenkins_client.return_value = mock_jenkins_client
 
         response = client.post(
-            "/api/v1/analyze-jenkins",
+            "/api/v1/analyze/jenkins",
             data={"job_name": "test-job", "build_number": "1"},
         )
         assert response.status_code == 404
@@ -239,11 +239,11 @@ def test_analyze_no_ai_client(client: TestClient):
 
 def test_analyze_file_no_files(client: TestClient):
     """Test file analysis with no files provided."""
-    response = client.post("/api/v1/analyze-file", files={})
+    response = client.post("/api/v1/analyze/file", files={})
     assert response.status_code == 422
 
 
 def test_analyze_jenkins_build_no_job(client: TestClient):
     """Test Jenkins analysis with no job name."""
-    response = client.post("/api/v1/analyze-jenkins", data={"build_number": "1"})
+    response = client.post("/api/v1/analyze/jenkins", data={"build_number": "1"})
     assert response.status_code == 422

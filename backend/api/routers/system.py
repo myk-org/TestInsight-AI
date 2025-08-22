@@ -61,4 +61,8 @@ async def get_service_status() -> dict[str, Any]:
             "encryption_enabled": True,
             "last_updated": base_config.get_settings().last_updated,
         },
+        # Keep app section minimal to avoid constructing mocks in tests
+        "app": {
+            "version": "0.1.0",
+        },
     }

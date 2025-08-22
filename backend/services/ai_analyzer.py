@@ -1,6 +1,7 @@
 """AI analyzer service using Google Gemini via ai_api.py."""
 
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -253,7 +254,9 @@ class AIAnalyzer:
         Returns:
             List of (file_path, content) tuples
         """
-        files = []
+        files: list[tuple[str, str]] = []
+        max_files = int(os.getenv("AI_REPO_MAX_FILES", "5"))
+        max_file_bytes = int(os.getenv("AI_REPO_MAX_FILE_BYTES", "51200"))
 
         # 2. Test files mentioned in failure output
         test_file_patterns = [
@@ -273,11 +276,21 @@ class AIAnalyzer:
                 file_path = self._find_file_in_repo(repo_path, test_file)
                 if file_path and file_path.exists():
                     try:
-                        content = file_path.read_text(encoding="utf-8")
+                        # Truncate large files to avoid excessive context
+                        content_raw = file_path.read_text(encoding="utf-8")
+                        content = content_raw if isinstance(content_raw, str) else str(content_raw)
+                        encoded = content.encode("utf-8", errors="ignore")
+                        if len(encoded) > max_file_bytes:
+                            content = (
+                                encoded[:max_file_bytes].decode("utf-8", errors="ignore") + "\n<!-- truncated -->\n"
+                            )
                         relative_path = str(file_path.relative_to(repo_path))
                         files.append((relative_path, content))
                     except (UnicodeDecodeError, PermissionError):
                         continue
+
+                if len(files) >= max_files:
+                    return files
 
         return files
 

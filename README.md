@@ -30,7 +30,7 @@ AI-powered test failure analysis tool that helps developers quickly diagnose and
 - **Production Ready**: Docker support, health checks, monitoring, and logging
 
 ### User Experience
-- **Modern UI**: React with TypeScript and Tailwind CSS
+- **Modern UI**: React with TypeScript and Tailwind CSS (Vite-based build)
 - **Dark/Light Theme**: Persistent theme preferences
 - **Real-time Configuration**: Live settings updates with connection testing
 - **Responsive Design**: Works on desktop and mobile devices
@@ -134,7 +134,7 @@ No external databases or message queues are required - all data is stored locall
 3. **Access the application**:
    - Frontend: http://localhost:3000
    - Backend API: http://localhost:8000
-   - Health check: http://localhost:8000/health
+   - Health check: http://localhost:8000/status
 
 ## ⚙️ Configuration
 
@@ -253,7 +253,7 @@ uv run pre-commit install
 uv run pre-commit run --all-files
 ```
 
-### Frontend Development Commands
+### Frontend Development Commands (Vite)
 
 ```bash
 cd frontend
@@ -261,14 +261,14 @@ cd frontend
 # Install dependencies
 npm install
 
-# Start development server
+# Start development server (Vite)
 npm start
 
 # Build for production
 npm run build
 
-# Run tests
-npm test
+# Run tests (Vitest)
+npm run test -- --run
 
 # Run linting
 npm run lint
@@ -278,7 +278,7 @@ npm run lint
 
 ### Comprehensive Test Suite
 
-The backend includes a robust test suite with **236 tests** achieving **80% code coverage**:
+The backend includes a robust test suite; the frontend has Vitest unit tests:
 
 **Test Categories:**
 - **Unit Tests**: Individual service and component testing
@@ -301,9 +301,9 @@ tox -e type-check   # Type checking with mypy
 tox -e security     # Security tests
 ```
 
-**Alternative: Direct pytest commands**
+**Alternative: Direct test commands**
 ```bash
-# Run all tests
+# Backend - run all tests
 uv run pytest backend/tests/ -v
 
 # Run with coverage
@@ -313,8 +313,8 @@ uv run pytest backend/tests/ --cov=backend --cov-report=html
 uv run pytest backend/tests/services/     # Service tests
 uv run pytest backend/tests/api/         # API tests
 
-# Run specific test file
-uv run pytest backend/tests/services/test_ai_analyzer.py -v
+# Frontend - run unit tests once (Vitest)
+cd frontend && npm run test -- --run
 ```
 
 **Test Results:**

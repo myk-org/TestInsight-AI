@@ -2,7 +2,7 @@
 # Multi-stage build for optimized production image
 
 # Build stage
-FROM node:18-alpine as builder
+FROM node:20-alpine as builder
 
 # Set working directory
 WORKDIR /app
@@ -16,11 +16,11 @@ RUN npm ci
 # Copy source code
 COPY . .
 
-# Build the application
+# Build the application (Vite)
 RUN npm run build
 
 # Production stage
-FROM node:18-alpine as production
+FROM node:20-alpine as production
 
 # Install curl for health checks
 RUN apk add --no-cache curl
@@ -32,7 +32,7 @@ WORKDIR /app
 RUN npm install -g serve
 
 # Copy built application from builder stage
-COPY --from=builder /app/build ./build
+COPY --from=builder /app/dist ./dist
 
 # Create non-root user for security
 RUN addgroup -g 1000 -S appuser && \
@@ -52,4 +52,4 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:3000/ || exit 1
 
 # Start the static file server
-CMD ["serve", "-s", "build", "-l", "3000"]
+CMD ["serve", "-s", "dist", "-l", "3000"]

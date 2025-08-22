@@ -1,6 +1,7 @@
 """Git client service for repository operations."""
 
 import tempfile
+from urllib.parse import urlparse, urlunparse
 from pathlib import Path
 
 from git import Repo
@@ -57,11 +58,12 @@ class GitClient:
         # Create temporary directory
         target_path = tempfile.mkdtemp(prefix="testinsight_ai_repo_")
 
-        # Clone repository using GitPython
-        cloned_repo = Repo.clone_from(self.repo_url, target_path)
+        # Clone repository using GitPython (shallow by default)
+        cloned_repo = Repo.clone_from(self.repo_url, target_path, depth=1)
 
-        # Checkout specific branch or commit
-        cloned_repo.git.checkout(self.commit or self.branch)
+        # Checkout specific branch or commit if provided; otherwise stay on default
+        if self.commit or self.branch:
+            cloned_repo.git.checkout(self.commit or self.branch)
 
         return target_path
 
@@ -74,7 +76,19 @@ class GitClient:
         Returns:
             Authenticated URL
         """
-        return self.repo_url.replace("https://", f"https://{self.github_token}@")
+        parsed = urlparse(self.repo_url)
+        # For GitHub, prefer x-access-token user with token as password
+        if parsed.hostname and parsed.hostname.lower().endswith("github.com"):
+            netloc = f"x-access-token:{self.github_token}@{parsed.hostname}"
+            if parsed.port:
+                netloc += f":{parsed.port}"
+            return urlunparse((parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
+
+        # Fallback: embed token as username only (legacy behavior)
+        netloc = f"{self.github_token}@{parsed.hostname}" if parsed.hostname else parsed.netloc
+        if parsed.port:
+            netloc += f":{parsed.port}"
+        return urlunparse((parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
 
 
 # Debug code removed for security
