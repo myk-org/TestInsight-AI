@@ -43,19 +43,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configure CORS via environment-driven allowlist
+# Configure CORS via environment-driven allowlist (registered after error middleware below)
 cors_origins_env = os.getenv("CORS_ALLOWED_ORIGINS", "*")
 allow_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()] if cors_origins_env else ["*"]
 allow_credentials_env = os.getenv("CORS_ALLOW_CREDENTIALS", "false").lower() == "true"
 allow_credentials = allow_credentials_env and allow_origins != ["*"]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allow_origins,
-    allow_credentials=allow_credentials,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 
 # Optional global error handler (env gated) while preserving default FastAPI behavior otherwise
@@ -90,6 +82,15 @@ async def security_headers(request: Request, call_next: Callable[[Request], Awai
 
 # Include API routes
 app.include_router(router, prefix="/api/v1")
+
+# Register CORS last so it wraps error responses as well
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allow_origins,
+    allow_credentials=allow_credentials,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/")
