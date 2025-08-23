@@ -255,8 +255,16 @@ class AIAnalyzer:
             List of (file_path, content) tuples
         """
         files: list[tuple[str, str]] = []
-        max_files = int(os.getenv("AI_REPO_MAX_FILES", "5"))
-        max_file_bytes = int(os.getenv("AI_REPO_MAX_FILE_BYTES", "51200"))
+
+        def _safe_int_env(key: str, default: int) -> int:
+            try:
+                return int(os.getenv(key, str(default)))
+            except (TypeError, ValueError):
+                # Avoid crashing on invalid env values; use default
+                return default
+
+        max_files = _safe_int_env("AI_REPO_MAX_FILES", 5)
+        max_file_bytes = _safe_int_env("AI_REPO_MAX_FILE_BYTES", 51200)
 
         # 2. Test files mentioned in failure output
         test_file_patterns = [

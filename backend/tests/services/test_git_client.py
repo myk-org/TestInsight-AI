@@ -96,11 +96,13 @@ class TestGitClient:
             assert (
                 client.github_token == "fake_github_token_xyz"
             )  # pragma: allowlist secret  # pragma: allowlist secret
-            # URL should be authenticated
+            # Clone should use authenticated URL, but public attribute remains original
             expected_url = (
                 "https://x-access-token:fake_github_token_xyz@github.com/testorg/testrepo"  # pragma: allowlist secret
             )
             mock_clone.assert_called_once_with(expected_url, fake_repo_path, depth=1)
+            assert client.repo_url == "https://github.com/testorg/testrepo"
+            assert getattr(client, "_authenticated_repo_url") == expected_url
             mock_repo_class.assert_called_once_with(Path(fake_repo_path))
 
     def test_init_validation_error(self):
@@ -140,9 +142,8 @@ class TestGitClient:
             )
             mock_clone.assert_called_once_with(expected_url, fake_repo_path, depth=1)
 
-            # repo_url gets modified to authenticated URL when github_token is provided
-            assert (
-                client.repo_url == "https://x-access-token:fake_github_token_xyz@github.com/testorg/testrepo"
-            )  # pragma: allowlist secret
+            # repo_url remains original; authenticated URL is stored separately
+            assert client.repo_url == "https://github.com/testorg/testrepo"
+            assert getattr(client, "_authenticated_repo_url") == expected_url
             assert client.branch == "main"
             assert client.github_token == "fake_github_token_xyz"  # pragma: allowlist secret

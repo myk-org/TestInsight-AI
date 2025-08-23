@@ -8,6 +8,7 @@ from typing import AsyncGenerator, Callable, Awaitable
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi import HTTPException as FastAPIHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -63,6 +64,9 @@ if os.getenv("ENABLE_GLOBAL_ERROR_HANDLER", "false").lower() == "true":
     ) -> JSONResponse:
         try:
             return await call_next(request)
+        except FastAPIHTTPException:
+            # Preserve intended HTTP semantics for client errors
+            raise
         except Exception:  # pragma: no cover (covered indirectly via API tests)
             # Log and return consistent JSON envelope
             logging.getLogger("testinsight").exception("Unhandled error")

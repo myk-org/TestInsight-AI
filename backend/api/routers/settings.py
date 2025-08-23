@@ -318,8 +318,8 @@ async def restore_settings(backup_file: UploadFile = File(...)) -> AppSettings:
     """
     try:
         # Validate extension is .json for safety and predictable UX
-        filename = getattr(backup_file, "filename")
-        if not filename.endswith(".json"):
+        filename = (getattr(backup_file, "filename", None) or "").strip()
+        if not filename.lower().endswith(".json"):
             raise HTTPException(status_code=400, detail="Backup file must be a JSON file")
 
         # Read and parse the uploaded file

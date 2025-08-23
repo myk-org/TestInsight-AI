@@ -134,7 +134,8 @@ No external databases or message queues are required - all data is stored locall
 3. **Access the application**:
    - Frontend: http://localhost:3000
    - Backend API: http://localhost:8000
-   - Health check: http://localhost:8000/status
+   - Health check (liveness): http://localhost:8000/health
+   - Service status (includes app version): http://localhost:8000/status
 
 ## ⚙️ Configuration
 
@@ -344,7 +345,7 @@ For comprehensive backend architecture, API documentation, and deployment guides
 For issues, feature requests, or questions, please check the troubleshooting section in our documentation or create an issue in the repository.
 
 ### Quick Troubleshooting
-- **Backend Issues**: Check `/health` endpoint and service logs
+- **Backend Issues**: Check both `/health` (liveness) and `/status` (service status + version) endpoints and service logs
 - **API Problems**: Review interactive docs at `/docs`
 - **Configuration**: Use settings web interface at `/settings`
 - **Testing**: Run `uv run pytest backend/tests/ -v` for diagnostics
