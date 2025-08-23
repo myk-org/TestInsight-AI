@@ -1,5 +1,6 @@
 // Register Testing Library matchers for Vitest
 import '@testing-library/jest-dom/vitest';
+import { setupMsw } from './test/msw';
 
 // Polyfill matchMedia for jsdom
 if (typeof window.matchMedia !== 'function') {
@@ -27,8 +28,10 @@ if (typeof window.matchMedia !== 'function') {
         }),
         dispatchEvent: vi.fn((event: Event) => {
           if ((event as any).type !== 'change') return false;
-          const e = event as unknown as MediaQueryListEvent;
-          listeners.forEach((listener) => listener(e));
+          const e = event as unknown as MediaQueryListEvent & { matches?: boolean; media?: string };
+          if ((e as any).matches === undefined) (e as any).matches = (mql as any).matches;
+          if ((e as any).media === undefined) (e as any).media = (mql as any).media;
+          listeners.forEach((listener) => (listener as any).call(mql as unknown as MediaQueryList, e));
           mql.onchange?.call(mql as unknown as MediaQueryList, e);
           return true;
         }),
@@ -39,13 +42,24 @@ if (typeof window.matchMedia !== 'function') {
   });
 }
 
-// Basic fetch stub for SettingsProvider
-{
+// Optional MSW server setup (enable with USE_MSW=true)
+if (process.env.USE_MSW === 'true') {
+  setupMsw();
+}
+
+// Basic fetch stub for SettingsProvider (disabled when MSW is enabled)
+if (process.env.USE_MSW !== 'true') {
   const originalFetch = (globalThis as any).fetch?.bind(globalThis);
-  (globalThis as any).fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const inputUrl = typeof input === 'string' || input instanceof URL ? input.toString() : (input as Request).url;
     const url = new URL(inputUrl, 'http://localhost');
-    const method = ((typeof input !== 'string' && !(input instanceof URL) ? (input as Request).method : init?.method) || 'GET').toUpperCase();
+    const method = (
+      init?.method
+        ? init.method
+        : (typeof input !== 'string' && !(input instanceof URL))
+          ? ((input as Request).method || 'GET')
+          : (init?.method || 'GET')
+    ).toUpperCase();
 
     if (url.pathname === '/api/v1/settings' && method === 'GET') {
       const body = {
@@ -56,7 +70,11 @@ if (typeof window.matchMedia !== 'function') {
       return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
 
-    if (originalFetch) return originalFetch(input as any, init);
-    return new Response(JSON.stringify({ error: 'Unhandled test fetch: ' + url.pathname }), { status: 404, headers: { 'Content-Type': 'application/json' } });
-  };
+    const allowNetwork = process.env.ALLOW_TEST_NETWORK === 'true';
+    if (allowNetwork && originalFetch) return originalFetch(input as any, init);
+    return new Response(
+      JSON.stringify({ error: 'Unhandled test fetch blocked: ' + url.pathname }),
+      { status: 404, headers: { 'Content-Type': 'application/json' } }
+    );
+  }));
 }
