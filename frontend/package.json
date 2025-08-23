@@ -21,6 +21,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "preview": "vite preview",
     "test": "vitest",
+    "test:ci": "vitest run --reporter=dot",
+    "coverage": "vitest run --coverage",
     "lint": "eslint . --ext .ts,.tsx --max-warnings=0"
   },
   "browserslist": {
@@ -44,6 +46,7 @@
     "@typescript-eslint/eslint-plugin": "^8.40.0",
     "@typescript-eslint/parser": "^8.40.0",
     "@vitejs/plugin-react-swc": "^3.7.0",
+    "@vitest/coverage-v8": "^1.6.1",
     "autoprefixer": "^10.4.21",
     "eslint": "^9.34.0",
     "eslint-plugin-jsx-a11y": "^6.10.2",
