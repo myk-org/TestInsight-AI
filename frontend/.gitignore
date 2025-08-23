@@ -10,8 +10,9 @@
 
 # production
 /build
-dist
+dist/
 tsconfig.tsbuildinfo
+*.tsbuildinfo
 
 # misc
 .DS_Store

@@ -90,8 +90,15 @@ class ServiceClientCreators(BaseServiceConfig):
         max_tokens = config.get("max_tokens")
 
         default_model = model if isinstance(model, str) and model else "gemini-2.5-pro"
-        default_temperature = float(temperature) if isinstance(temperature, (int, float)) else 0.7
-        default_max_tokens = int(max_tokens) if isinstance(max_tokens, int) else 4096
+        # Tolerate numeric strings from forms
+        try:
+            default_temperature = float(temperature) if temperature is not None else 0.7
+        except (TypeError, ValueError):
+            default_temperature = 0.7
+        try:
+            default_max_tokens = int(max_tokens) if max_tokens is not None else 4096
+        except (TypeError, ValueError):
+            default_max_tokens = 4096
 
         # Pass defaults via constructor so validation happens in the client
         gemini_client = GeminiClient(

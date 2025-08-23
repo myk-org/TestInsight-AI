@@ -12,7 +12,7 @@ from fastapi import HTTPException as FastAPIHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 from backend.api.main import router
 
 
@@ -39,18 +39,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(
     title="TestInsight AI",
     description="AI-powered test analysis and insights platform",
-    version="0.1.0",
+    version=os.getenv("APP_VERSION", "0.1.0"),
     lifespan=lifespan,
 )
 
 # Configure CORS via environment-driven allowlist
 cors_origins_env = os.getenv("CORS_ALLOWED_ORIGINS", "*")
 allow_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()] if cors_origins_env else ["*"]
+allow_credentials_env = os.getenv("CORS_ALLOW_CREDENTIALS", "false").lower() == "true"
+allow_credentials = allow_credentials_env and allow_origins != ["*"]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allow_origins,
-    allow_credentials=True,
+    allow_credentials=allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -59,9 +61,7 @@ app.add_middleware(
 # Optional global error handler (env gated) while preserving default FastAPI behavior otherwise
 if os.getenv("ENABLE_GLOBAL_ERROR_HANDLER", "false").lower() == "true":
 
-    async def error_middleware(
-        request: Request, call_next: Callable[[Request], Awaitable[JSONResponse]]
-    ) -> JSONResponse:
+    async def error_middleware(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         try:
             return await call_next(request)
         except FastAPIHTTPException:
@@ -80,7 +80,7 @@ if os.getenv("ENABLE_GLOBAL_ERROR_HANDLER", "false").lower() == "true":
 
 # Security headers middleware (always on, without external dependency)
 @app.middleware("http")
-async def security_headers(request: Request, call_next: Callable[[Request], Awaitable[JSONResponse]]) -> JSONResponse:
+async def security_headers(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")

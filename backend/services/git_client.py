@@ -1,7 +1,7 @@
 """Git client service for repository operations."""
 
 import tempfile
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlparse, urlunparse, quote
 from pathlib import Path
 
 from git import Repo
@@ -82,18 +82,20 @@ class GitClient:
             Authenticated URL
         """
         parsed = urlparse(self.repo_url)
-        # For GitHub, prefer x-access-token user with token as password
-        if parsed.hostname and parsed.hostname.lower().endswith("github.com"):
-            netloc = f"x-access-token:{self.github_token}@{parsed.hostname}"
+        # Only embed auth for http(s) schemes with a hostname
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            return self.repo_url
+
+        # For GitHub, prefer x-access-token user with token as password; URL-encode token
+        if parsed.hostname.lower().endswith("github.com"):
+            encoded = quote(self.github_token or "", safe="")
+            netloc = f"x-access-token:{encoded}@{parsed.hostname}"
             if parsed.port:
                 netloc += f":{parsed.port}"
             return urlunparse((parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
 
-        # Fallback: embed token as username only (legacy behavior)
-        netloc = f"{self.github_token}@{parsed.hostname}" if parsed.hostname else parsed.netloc
-        if parsed.port:
-            netloc += f":{parsed.port}"
-        return urlunparse((parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
+        # For other providers, do not embed token (avoid unsafe patterns); return original URL
+        return self.repo_url
 
 
 # Debug code removed for security

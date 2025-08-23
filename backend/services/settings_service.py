@@ -367,3 +367,12 @@ class SettingsService:
             return restored_settings
         except (json.JSONDecodeError, ValueError) as e:
             raise ValueError(f"Invalid backup file: {e}")
+
+    def apply_restored_settings(self, restored: AppSettings) -> AppSettings:
+        """Apply already validated/restored settings.
+
+        Saves and updates in-memory cache in a public, supported way.
+        """
+        self._save_settings(restored)
+        self._current_settings = restored
+        return restored
