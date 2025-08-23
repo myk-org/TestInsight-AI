@@ -16,7 +16,9 @@
   },
   "scripts": {
     "start": "vite",
+    "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "preview": "vite preview",
     "test": "vitest",
     "lint": "eslint . --ext .ts,.tsx --max-warnings=0"
@@ -55,5 +57,8 @@
     "typescript": "^5.4.5",
     "vite": "^5.4.8",
     "vitest": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
