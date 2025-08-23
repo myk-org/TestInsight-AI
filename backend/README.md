@@ -157,8 +157,8 @@ client = GitClient(repo_url="...", github_token="...")
 ### Analysis Endpoints
 
 - `POST /api/v1/analyze`: Analyze text content with AI.
-- `POST /api/v1/analyze-file`: Analyze uploaded files with AI.
-- `POST /api/v1/analyze-jenkins`: Analyze Jenkins build output with AI.
+- `POST /api/v1/analyze/file`: Analyze uploaded files with AI.
+- `POST /api/v1/analyze/jenkins`: Analyze Jenkins build output with AI.
 
 ### Jenkins Integration Endpoints
 
@@ -188,7 +188,7 @@ client = GitClient(repo_url="...", github_token="...")
 
 ### System Endpoints
 
-- `GET /api/v1/status`: Get status of all services.
+- `GET /api/v1/status`: Get status of all services (includes app version).
 
 ## Data Models
 

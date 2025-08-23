@@ -1,6 +1,6 @@
 skipsdist = true
 
-envlist = ["unused-code", "backend-unittests"]
+envlist = ["unused-code", "backend-unittests", "frontend-unittests"]
 
 [env.unused-code]
 deps = ["python-utility-scripts"]
@@ -9,3 +9,12 @@ commands = [["pyutils-unusedcode"]]
 [env.backend-unittests]
 deps = ["uv"]
 commands = [["uv", "run", "--group", "tests", "pytest", "backend/tests"]]
+
+[env.frontend-unittests]
+description = "Run frontend unit tests with Vitest"
+changedir = "frontend"
+allowlist_externals = ["npm"]
+commands = [
+  ["npm", "install", "--no-audit", "--no-fund", "--legacy-peer-deps"],
+  ["npm", "run", "test", "--", "--run"]
+]

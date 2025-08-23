@@ -173,7 +173,12 @@ class TestServiceConfig:
 
             client = service_client_creators.create_configured_ai_client()
 
-            mock_gemini_class.assert_called_once_with(api_key=FAKE_GEMINI_API_KEY)
+            mock_gemini_class.assert_called_once_with(
+                api_key=FAKE_GEMINI_API_KEY,
+                default_model="gemini-1.5-pro",
+                default_temperature=0.7,
+                default_max_tokens=4096,
+            )
             mock_analyzer_class.assert_called_once_with(client=mock_gemini_client)
             assert client == mock_analyzer
 
@@ -190,7 +195,12 @@ class TestServiceConfig:
 
         client = service_client_creators.create_configured_ai_client(api_key=FAKE_CUSTOM_API_KEY)
 
-        mock_gemini_class.assert_called_once_with(api_key=FAKE_CUSTOM_API_KEY)
+        mock_gemini_class.assert_called_once_with(
+            api_key=FAKE_CUSTOM_API_KEY,
+            default_model="gemini-1.5-pro",
+            default_temperature=0.7,
+            default_max_tokens=4096,
+        )
         mock_analyzer_class.assert_called_once_with(client=mock_gemini_client)
         assert client == mock_analyzer
 

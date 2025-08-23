@@ -302,7 +302,8 @@ def generate_encryption_key() -> str:
         Base64 encoded encryption key
     """
     key = Fernet.generate_key()
-    return base64.urlsafe_b64encode(key).decode()
+    # Fernet.generate_key already returns a base64-encoded key (bytes). Return as string.
+    return key.decode()
 
 
 # Singleton instance

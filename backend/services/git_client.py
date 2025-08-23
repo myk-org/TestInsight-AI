@@ -1,6 +1,7 @@
 """Git client service for repository operations."""
 
 import tempfile
+from urllib.parse import urlparse, urlunparse, quote
 from pathlib import Path
 
 from git import Repo
@@ -35,7 +36,8 @@ class GitClient:
 
         self.repo_url = repo_url
         self.github_token = github_token
-        self.repo_url = self._authenticate_url() if self.github_token else self.repo_url
+        # Keep original URL public; compute authenticated URL for internal use
+        self._authenticated_repo_url = self._authenticate_url() if self.github_token else self.repo_url
         self.branch = branch
         self.commit = commit
 
@@ -57,11 +59,16 @@ class GitClient:
         # Create temporary directory
         target_path = tempfile.mkdtemp(prefix="testinsight_ai_repo_")
 
-        # Clone repository using GitPython
-        cloned_repo = Repo.clone_from(self.repo_url, target_path)
-
-        # Checkout specific branch or commit
-        cloned_repo.git.checkout(self.commit or self.branch)
+        # Clone repository using GitPython (shallow by default)
+        # Clone logic: full clone for specific commit; shallow clone for branch/default
+        if self.commit:
+            cloned_repo = Repo.clone_from(self._authenticated_repo_url, target_path)
+            cloned_repo.git.fetch("origin", self.commit)
+            cloned_repo.git.checkout(self.commit)
+        else:
+            cloned_repo = Repo.clone_from(self._authenticated_repo_url, target_path, depth=1)
+            if self.branch:
+                cloned_repo.git.checkout(self.branch)
 
         return target_path
 
@@ -74,7 +81,21 @@ class GitClient:
         Returns:
             Authenticated URL
         """
-        return self.repo_url.replace("https://", f"https://{self.github_token}@")
+        parsed = urlparse(self.repo_url)
+        # Only embed auth for http(s) schemes with a hostname
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            return self.repo_url
+
+        # For GitHub, prefer x-access-token user with token as password; URL-encode token
+        if parsed.hostname.lower().endswith("github.com"):
+            encoded = quote(self.github_token or "", safe="")
+            netloc = f"x-access-token:{encoded}@{parsed.hostname}"
+            if parsed.port:
+                netloc += f":{parsed.port}"
+            return urlunparse((parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
+
+        # For other providers, do not embed token (avoid unsafe patterns); return original URL
+        return self.repo_url
 
 
 # Debug code removed for security

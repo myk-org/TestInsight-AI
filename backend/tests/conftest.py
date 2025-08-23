@@ -1,7 +1,5 @@
 """Pytest configuration and fixtures for backend tests."""
 
-from unittest.mock import patch
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -12,20 +10,6 @@ from backend.main import app
 def client():
     """FastAPI test client."""
     return TestClient(app)
-
-
-@pytest.fixture
-def mock_file_operations():
-    """Mock file system operations."""
-    with (
-        patch("builtins.open"),
-        patch("pathlib.Path.exists"),
-        patch("pathlib.Path.write_text"),
-        patch("pathlib.Path.read_text"),
-        patch("json.load"),
-        patch("json.dump"),
-    ):
-        yield
 
 
 # Test constants

@@ -90,7 +90,7 @@ def test_restore_settings(client: TestClient):
 
         files = {
             "backup_file": (
-                "test.txt",
+                "settings.json",
                 '{"jenkins": {"url": "http://test.com"}, "github": {"token": "test_token"}, "ai": {"gemini_api_key": "test_key"}}',
                 "application/json",
             )

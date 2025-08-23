@@ -74,7 +74,7 @@ class ServiceClientCreators(BaseServiceConfig):
         getters = ServiceConfigGetters()
         config = getters.get_ai_config()
 
-        final_api_key = api_key or config["api_key"]
+        final_api_key = api_key if api_key is not None else config["api_key"]
 
         if not isinstance(final_api_key, str):
             raise TypeError("API key must be a string.")
@@ -84,7 +84,29 @@ class ServiceClientCreators(BaseServiceConfig):
                 "AI service is not configured. Please provide a Gemini API key in settings or as parameter."
             )
 
-        gemini_client = GeminiClient(api_key=final_api_key)
+        # Compute defaults without falsy-coalescing pitfalls
+        model = config.get("model")
+        temperature = config.get("temperature")
+        max_tokens = config.get("max_tokens")
+
+        default_model = model if isinstance(model, str) and model else "gemini-2.5-pro"
+        # Tolerate numeric strings from forms
+        try:
+            default_temperature = float(temperature) if temperature is not None else 0.7
+        except (TypeError, ValueError):
+            default_temperature = 0.7
+        try:
+            default_max_tokens = int(max_tokens) if max_tokens is not None else 4096
+        except (TypeError, ValueError):
+            default_max_tokens = 4096
+
+        # Pass defaults via constructor so validation happens in the client
+        gemini_client = GeminiClient(
+            api_key=final_api_key,
+            default_model=default_model,
+            default_temperature=default_temperature,
+            default_max_tokens=default_max_tokens,
+        )
         return AIAnalyzer(client=gemini_client)
 
     def create_configured_git_client(

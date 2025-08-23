@@ -37,7 +37,7 @@
 import axios from "axios";
 import { AnalysisResult, AIInsight } from "../App";
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
+const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || "http://localhost:8000";
 
 const api = axios.create({
   baseURL: `${API_BASE_URL}/api/v1`,
@@ -252,7 +252,7 @@ export const analyzeJenkinsBuild = async (
       }
     }
 
-    const response = await api.post("/analyze-jenkins", formData, {
+    const response = await api.post("/analyze/jenkins", formData, {
       headers: {
         "Content-Type": "multipart/form-data",
       },

@@ -680,8 +680,8 @@ class TestSettingsEndpoints:
         )
         mock_service_instance.get_masked_settings.return_value = mock_restored_settings
 
-        # Create a fake file upload (using .txt due to endpoint bug that rejects .json files)
-        files = {"backup_file": ("settings_backup.txt", BytesIO(backup_content), "application/json")}
+        # Create a fake file upload using proper .json extension
+        files = {"backup_file": ("settings_backup.json", BytesIO(backup_content), "application/json")}
 
         response = client.post("/api/v1/settings/restore", files=files)
 
@@ -691,17 +691,16 @@ class TestSettingsEndpoints:
 
     def test_restore_settings_invalid_file_type(self, client):
         """Test settings restore with invalid file type."""
-        files = {"backup_file": ("settings.json", BytesIO(b"invalid content"), "application/json")}
+        files = {"backup_file": ("settings.txt", BytesIO(b"invalid content"), "application/json")}
 
         response = client.post("/api/v1/settings/restore", files=files)
 
-        # Due to a bug in the endpoint, it rejects JSON files instead of accepting them
         assert response.status_code == 400
         assert "JSON file" in response.json()["detail"]
 
     def test_restore_settings_invalid_json(self, client):
         """Test settings restore with invalid JSON."""
-        files = {"backup_file": ("settings.txt", BytesIO(b"invalid json"), "application/json")}
+        files = {"backup_file": ("settings.json", BytesIO(b"invalid json"), "application/json")}
 
         response = client.post("/api/v1/settings/restore", files=files)
 

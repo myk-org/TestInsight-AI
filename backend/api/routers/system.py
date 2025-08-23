@@ -1,5 +1,7 @@
 """System status endpoints for TestInsight AI."""
 
+import logging
+import os
 from typing import Any
 
 from fastapi import APIRouter
@@ -26,20 +28,21 @@ async def get_service_status() -> dict[str, Any]:
     # Test actual connections
     jenkins_available = False
     jenkins_url = "Not configured"
+    logger = logging.getLogger("testinsight")
     try:
         jenkins = client_creators.create_configured_jenkins_client()
         if jenkins:
             jenkins_available = jenkins.is_connected()
             jenkins_url = jenkins.url or "Not configured"
     except Exception:
-        pass
+        logger.exception("Jenkins status check failed")
 
     ai_available = False
     try:
         client_creators.create_configured_ai_client()
         ai_available = True
     except Exception:
-        pass
+        logger.exception("AI status check failed")
 
     return {
         "services": {
@@ -60,5 +63,9 @@ async def get_service_status() -> dict[str, Any]:
         "settings": {
             "encryption_enabled": True,
             "last_updated": base_config.get_settings().last_updated,
+        },
+        # Keep app section minimal; read version from env with sensible default
+        "app": {
+            "version": os.getenv("APP_VERSION", "0.1.0"),
         },
     }

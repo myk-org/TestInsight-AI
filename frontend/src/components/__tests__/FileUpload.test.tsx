@@ -6,15 +6,17 @@ import FileUpload from '../FileUpload';
 import * as api from '../../services/api';
 
 // Mock the API module
-jest.mock('../../services/api');
-const mockedApi = api as jest.Mocked<typeof api>;
+vi.mock('../../services/api');
+const mockedApi = api as any;
+
+let mockDroppedFiles: File[] = [];
 
 // Mock react-dropzone
-jest.mock('react-dropzone', () => ({
-  useDropzone: jest.fn((options) => ({
+vi.mock('react-dropzone', () => ({
+  useDropzone: vi.fn((options: any) => ({
     getRootProps: () => ({
       'data-testid': 'dropzone',
-      onClick: jest.fn(),
+      onClick: () => options.onDrop?.(mockDroppedFiles),
     }),
     getInputProps: () => ({
       'data-testid': 'file-input',
@@ -26,9 +28,12 @@ jest.mock('react-dropzone', () => ({
 
 const mockProps = {
   repoUrl: 'https://github.com/example/repo',
-  onAnalysisStart: jest.fn(),
-  onAnalysisComplete: jest.fn(),
-  onAnalysisError: jest.fn(),
+  branch: '',
+  commit: '',
+  systemPrompt: '',
+  onAnalysisStart: vi.fn(),
+  onAnalysisComplete: vi.fn(),
+  onAnalysisError: vi.fn(),
 };
 
 const mockAnalysisResult = {
@@ -68,7 +73,7 @@ const mockAnalysisResult = {
 
 describe('FileUpload Component', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it('renders file upload dropzone', () => {
@@ -94,24 +99,14 @@ describe('FileUpload Component', () => {
     const xmlFile2 = new File(['<testsuites></testsuites>'], 'test2.xml', { type: 'text/xml' });
 
     // Mock the dropzone callback
-    const { useDropzone } = require('react-dropzone');
-    useDropzone.mockImplementation((options) => ({
-      getRootProps: () => ({
-        'data-testid': 'dropzone',
-        onClick: () => options.onDrop([xmlFile1, xmlFile2]),
-      }),
-      getInputProps: () => ({
-        'data-testid': 'file-input',
-        type: 'file',
-      }),
-      isDragActive: false,
-    }));
+    mockDroppedFiles = [xmlFile1, xmlFile2];
 
     // Re-render with mocked dropzone
     render(<FileUpload {...mockProps} />);
 
     // Click to trigger file upload
-    await user.click(screen.getByTestId('dropzone'));
+    const [firstDropzone] = screen.getAllByTestId('dropzone');
+    await user.click(firstDropzone);
 
     await waitFor(() => {
       expect(screen.getByText('Uploaded Files (2)')).toBeInTheDocument();
@@ -128,24 +123,14 @@ describe('FileUpload Component', () => {
     const textFile = new File(['some text'], 'test.txt', { type: 'text/plain' });
 
     // Mock the dropzone callback to simulate dropping non-XML files
-    const { useDropzone } = require('react-dropzone');
-    useDropzone.mockImplementation((options) => ({
-      getRootProps: () => ({
-        'data-testid': 'dropzone',
-        onClick: () => options.onDrop([textFile]),
-      }),
-      getInputProps: () => ({
-        'data-testid': 'file-input',
-        type: 'file',
-      }),
-      isDragActive: false,
-    }));
+    mockDroppedFiles = [textFile];
 
     // Re-render with mocked dropzone
     render(<FileUpload {...mockProps} />);
 
     // Click to trigger file upload
-    await user.click(screen.getByTestId('dropzone'));
+    const [firstDropzone2] = screen.getAllByTestId('dropzone');
+    await user.click(firstDropzone2);
 
     await waitFor(() => {
       expect(mockProps.onAnalysisError).toHaveBeenCalledWith(
@@ -161,18 +146,7 @@ describe('FileUpload Component', () => {
     const xmlFile = new File(['<testsuites></testsuites>'], 'test.xml', { type: 'application/xml' });
 
     // Mock the dropzone callback
-    const { useDropzone } = require('react-dropzone');
-    useDropzone.mockImplementation((options) => ({
-      getRootProps: () => ({
-        'data-testid': 'dropzone',
-        onClick: () => options.onDrop([xmlFile]),
-      }),
-      getInputProps: () => ({
-        'data-testid': 'file-input',
-        type: 'file',
-      }),
-      isDragActive: false,
-    }));
+    mockDroppedFiles = [xmlFile];
 
     render(<FileUpload {...mockProps} />);
 
@@ -184,7 +158,7 @@ describe('FileUpload Component', () => {
     });
 
     // Find and click remove button
-    const removeButton = screen.getByRole('button', { name: /remove/i });
+    const removeButton = screen.getAllByRole('button').find((b) => (b as HTMLElement).textContent === '') as HTMLElement;
     await user.click(removeButton);
 
     await waitFor(() => {
@@ -198,18 +172,7 @@ describe('FileUpload Component', () => {
 
     const xmlFile = new File(['<testsuites></testsuites>'], 'test.xml', { type: 'application/xml' });
 
-    const { useDropzone } = require('react-dropzone');
-    useDropzone.mockImplementation((options) => ({
-      getRootProps: () => ({
-        'data-testid': 'dropzone',
-        onClick: () => options.onDrop([xmlFile]),
-      }),
-      getInputProps: () => ({
-        'data-testid': 'file-input',
-        type: 'file',
-      }),
-      isDragActive: false,
-    }));
+    mockDroppedFiles = [xmlFile];
 
     render(<FileUpload {...mockProps} />);
 
@@ -226,18 +189,7 @@ describe('FileUpload Component', () => {
 
     const xmlFile = new File(['<testsuites></testsuites>'], 'test.xml', { type: 'application/xml' });
 
-    const { useDropzone } = require('react-dropzone');
-    useDropzone.mockImplementation((options) => ({
-      getRootProps: () => ({
-        'data-testid': 'dropzone',
-        onClick: () => options.onDrop([xmlFile]),
-      }),
-      getInputProps: () => ({
-        'data-testid': 'file-input',
-        type: 'file',
-      }),
-      isDragActive: false,
-    }));
+    mockDroppedFiles = [xmlFile];
 
     render(<FileUpload {...mockProps} />);
 
@@ -250,7 +202,10 @@ describe('FileUpload Component', () => {
 
     await waitFor(() => {
       expect(mockProps.onAnalysisStart).toHaveBeenCalled();
-      expect(mockedApi.analyzeXMLFiles).toHaveBeenCalledWith([xmlFile], mockProps.repoUrl);
+      expect(mockedApi.analyzeXMLFiles).toHaveBeenCalled();
+      const args = (mockedApi.analyzeXMLFiles as any).mock.calls[0];
+      expect(args[0][0].name).toBe('test.xml');
+      expect(args[1]).toMatchObject({ url: mockProps.repoUrl });
       expect(mockProps.onAnalysisComplete).toHaveBeenCalledWith(mockAnalysisResult);
     });
   });
@@ -262,18 +217,7 @@ describe('FileUpload Component', () => {
 
     const xmlFile = new File(['<testsuites></testsuites>'], 'test.xml', { type: 'application/xml' });
 
-    const { useDropzone } = require('react-dropzone');
-    useDropzone.mockImplementation((options) => ({
-      getRootProps: () => ({
-        'data-testid': 'dropzone',
-        onClick: () => options.onDrop([xmlFile]),
-      }),
-      getInputProps: () => ({
-        'data-testid': 'file-input',
-        type: 'file',
-      }),
-      isDragActive: false,
-    }));
+    mockDroppedFiles = [xmlFile];
 
     render(<FileUpload {...mockProps} />);
 
@@ -305,18 +249,7 @@ describe('FileUpload Component', () => {
     const content = 'x'.repeat(1024);
     const xmlFile = new File([content], 'large-test.xml', { type: 'application/xml' });
 
-    const { useDropzone } = require('react-dropzone');
-    useDropzone.mockImplementation((options) => ({
-      getRootProps: () => ({
-        'data-testid': 'dropzone',
-        onClick: () => options.onDrop([xmlFile]),
-      }),
-      getInputProps: () => ({
-        'data-testid': 'file-input',
-        type: 'file',
-      }),
-      isDragActive: false,
-    }));
+    mockDroppedFiles = [xmlFile];
 
     render(<FileUpload {...mockProps} />);
 
@@ -334,18 +267,7 @@ describe('FileUpload Component', () => {
 
     const xmlFile = new File(['<testsuites></testsuites>'], 'test.xml', { type: 'application/xml' });
 
-    const { useDropzone } = require('react-dropzone');
-    useDropzone.mockImplementation((options) => ({
-      getRootProps: () => ({
-        'data-testid': 'dropzone',
-        onClick: () => options.onDrop([xmlFile]),
-      }),
-      getInputProps: () => ({
-        'data-testid': 'file-input',
-        type: 'file',
-      }),
-      isDragActive: false,
-    }));
+    mockDroppedFiles = [xmlFile];
 
     render(<FileUpload {...mockProps} />);
 
@@ -370,18 +292,7 @@ describe('FileUpload Component', () => {
 
     const xmlFile = new File(['<testsuites></testsuites>'], 'test.xml', { type: 'application/xml' });
 
-    const { useDropzone } = require('react-dropzone');
-    useDropzone.mockImplementation((options) => ({
-      getRootProps: () => ({
-        'data-testid': 'dropzone',
-        onClick: () => options.onDrop([xmlFile]),
-      }),
-      getInputProps: () => ({
-        'data-testid': 'file-input',
-        type: 'file',
-      }),
-      isDragActive: false,
-    }));
+    mockDroppedFiles = [xmlFile];
 
     render(<FileUpload {...customProps} />);
 
@@ -391,7 +302,9 @@ describe('FileUpload Component', () => {
     await user.click(analyzeButton);
 
     await waitFor(() => {
-      expect(mockedApi.analyzeXMLFiles).toHaveBeenCalledWith([xmlFile], 'https://github.com/custom/repo');
+      expect(mockedApi.analyzeXMLFiles).toHaveBeenCalled();
+      const args = (mockedApi.analyzeXMLFiles as any).mock.calls[0];
+      expect(args[1]).toMatchObject({ url: 'https://github.com/custom/repo' });
     });
   });
 });

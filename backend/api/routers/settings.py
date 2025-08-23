@@ -317,14 +317,17 @@ async def restore_settings(backup_file: UploadFile = File(...)) -> AppSettings:
         Restored settings with sensitive data masked
     """
     try:
-        # Validate file type
-        filename = getattr(backup_file, "filename")
-
-        if filename.endswith(".json"):
+        # Validate extension is .json for safety and predictable UX
+        filename = (getattr(backup_file, "filename", None) or "").strip()
+        if not filename.lower().endswith(".json"):
             raise HTTPException(status_code=400, detail="Backup file must be a JSON file")
 
         # Read and parse the uploaded file
         content = await backup_file.read()
+        # Cap upload size to prevent abuse (2 MB)
+        max_bytes = 2 * 1024 * 1024
+        if len(content) > max_bytes:
+            raise HTTPException(status_code=400, detail="Backup file exceeds 2 MB limit")
 
         try:
             # Decode content and parse JSON
@@ -341,10 +344,9 @@ async def restore_settings(backup_file: UploadFile = File(...)) -> AppSettings:
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Invalid settings format: {str(e)}")
 
-        # Restore settings using the service
+        # Restore settings using the service (public API)
         settings_service = SettingsService()
-        settings_service._save_settings(validated_settings)
-        settings_service._current_settings = validated_settings
+        settings_service.apply_restored_settings(validated_settings)
 
         return settings_service.get_masked_settings()
 
