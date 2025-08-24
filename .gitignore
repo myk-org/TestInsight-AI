@@ -24,6 +24,7 @@ CLAUDE.md
 .claude/
 web-bundles/
 GEMINI.md
+.serena/
 
 # App
 data/
