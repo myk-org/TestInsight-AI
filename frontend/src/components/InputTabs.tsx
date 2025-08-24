@@ -136,7 +136,18 @@ const InputTabs: React.FC<InputTabsProps> = ({
       {/* Collapsible System Prompt */}
       <details className="group">
         <summary className="flex items-center justify-between w-full cursor-pointer text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">
-          <span>System Prompt (Optional)</span>
+          <span className="flex items-center gap-2">
+            <span>System Prompt (Optional)</span>
+            {/* Show indicator only when details is closed and prompt is non-empty */}
+            {systemPrompt.trim() && (
+              <span
+                aria-label="System prompt configured"
+                className="group-open:hidden inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300 border border-green-200 dark:border-green-800"
+              >
+                Configured
+              </span>
+            )}
+          </span>
           <svg className="w-5 h-5 transform transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
@@ -159,7 +170,18 @@ const InputTabs: React.FC<InputTabsProps> = ({
       {/* Collapsible Repository Configuration */}
       <details className="group">
         <summary className="flex items-center justify-between w-full cursor-pointer text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">
-          <span>GitHub Repository URL (Optional)</span>
+          <span className="flex items-center gap-2">
+            <span>GitHub Repository URL (Optional)</span>
+            {/* Show indicator only when details is closed and repo is valid/non-empty */}
+            {repoUrl.trim() && isValidUrl && (
+              <span
+                aria-label="Repository configured"
+                className="group-open:hidden inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300 border border-green-200 dark:border-green-800"
+              >
+                Configured
+              </span>
+            )}
+          </span>
           <svg className="w-5 h-5 transform transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
