@@ -85,7 +85,7 @@ const InputTabs: React.FC<InputTabsProps> = ({
     }
 
     // Only support GitHub HTTPS URLs
-    const urlPattern = /^https:\/\/github\.com\/[^\s\/]+\/[^\s\/]+(?:\.git)?$/;
+    const urlPattern = /^https:\/\/(?:www\.)?github\.com\/[^\s\/]+\/[^\s\/]+(?:\.git)?\/?$/;
     setIsValidUrl(urlPattern.test(url.trim()));
   };
 
@@ -132,7 +132,7 @@ const InputTabs: React.FC<InputTabsProps> = ({
   };
 
   // Shared Tailwind classes for the small "Configured" badge
-  const configuredBadgeClass = "group-open:hidden inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300 border border-green-200 dark:border-green-800";
+  const CONFIGURED_BADGE_CLASS = "group-open:hidden inline-flex items-center shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300 border border-green-200 dark:border-green-800";
 
   return (
     <div className="space-y-6">
@@ -145,7 +145,7 @@ const InputTabs: React.FC<InputTabsProps> = ({
             {Boolean(systemPrompt.trim()) && (
               <span
                 aria-label="System prompt configured"
-                className={configuredBadgeClass}
+                className={CONFIGURED_BADGE_CLASS}
               >
                 Configured
               </span>
@@ -172,14 +172,14 @@ const InputTabs: React.FC<InputTabsProps> = ({
 
       {/* Collapsible Repository Configuration */}
       <details className="group">
-        <summary className="flex items-center justify-between w-full cursor-pointer text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">
+        <summary id="repo-url-summary" className="flex items-center justify-between w-full cursor-pointer text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">
           <span className="flex items-center gap-2">
             <span>GitHub Repository URL (Optional)</span>
             {/* Show indicator only when details is closed and repo is valid/non-empty */}
             {Boolean(repoUrl.trim()) && isValidUrl && (
               <span
                 aria-label="Repository configured"
-                className={configuredBadgeClass}
+                className={CONFIGURED_BADGE_CLASS}
               >
                 Configured
               </span>
@@ -192,8 +192,9 @@ const InputTabs: React.FC<InputTabsProps> = ({
         <div className="mt-4 space-y-4">
           <div>
             <input
-              type="text"
+              type="url"
               id="repo-url"
+              aria-labelledby="repo-url-summary"
               value={repoUrl}
               onChange={(e) => handleRepoUrlChange(e.target.value)}
               placeholder="https://github.com/user/repository.git"
@@ -206,7 +207,7 @@ const InputTabs: React.FC<InputTabsProps> = ({
               }`}
             />
             {repoUrl && !isValidUrl && (
-              <p id="repo-url-error" className="text-xs text-red-600 dark:text-red-400 mt-1">
+              <p id="repo-url-error" aria-live="polite" className="text-xs text-red-600 dark:text-red-400 mt-1">
                 Please enter a valid GitHub HTTPS URL (e.g., https://github.com/user/repo.git)
               </p>
             )}
