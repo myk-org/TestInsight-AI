@@ -4,6 +4,9 @@ import TextInput from './TextInput';
 import JenkinsForm from './JenkinsForm';
 import { AnalysisResult } from '../App';
 
+// Shared Tailwind classes for the small "Configured" badge
+const CONFIGURED_BADGE_CLASS = "group-open:hidden inline-flex items-center shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300 border border-green-200 dark:border-green-800";
+
 interface InputTabsProps {
   onAnalysisStart: () => void;
   onAnalysisComplete: (results: AnalysisResult) => void;
@@ -84,8 +87,8 @@ const InputTabs: React.FC<InputTabsProps> = ({
       return;
     }
 
-    // Only support GitHub HTTPS URLs
-    const urlPattern = /^https:\/\/github\.com\/[^\s\/]+\/[^\s\/]+(?:\.git)?$/;
+    // Only support GitHub HTTPS URLs (case-insensitive for scheme/host)
+    const urlPattern = /^https:\/\/(?:www\.)?github\.com\/[^\s\/]+\/[^^\s\/]+(?:\.git)?\/?$/i;
     setIsValidUrl(urlPattern.test(url.trim()));
   };
 
@@ -131,12 +134,26 @@ const InputTabs: React.FC<InputTabsProps> = ({
     }
   };
 
+  // Shared Tailwind classes for the small "Configured" badge
+  // CONFIGURED_BADGE_CLASS is hoisted to module scope to avoid re-creation
+
   return (
     <div className="space-y-6">
       {/* Collapsible System Prompt */}
       <details className="group">
         <summary className="flex items-center justify-between w-full cursor-pointer text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">
-          <span>System Prompt (Optional)</span>
+          <span className="flex items-center gap-2">
+            <span>System Prompt (Optional)</span>
+            {/* Show indicator only when details is closed and prompt is non-empty */}
+            {Boolean(systemPrompt.trim()) && (
+              <span
+                aria-label="System prompt configured"
+                className={CONFIGURED_BADGE_CLASS}
+              >
+                Configured
+              </span>
+            )}
+          </span>
           <svg className="w-5 h-5 transform transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
@@ -158,8 +175,19 @@ const InputTabs: React.FC<InputTabsProps> = ({
 
       {/* Collapsible Repository Configuration */}
       <details className="group">
-        <summary className="flex items-center justify-between w-full cursor-pointer text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">
-          <span>GitHub Repository URL (Optional)</span>
+        <summary id="repo-url-summary" className="flex items-center justify-between w-full cursor-pointer text-left text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">
+          <span className="flex items-center gap-2">
+            <span>GitHub Repository URL (Optional)</span>
+            {/* Show indicator only when details is closed and repo is valid/non-empty */}
+            {Boolean(repoUrl.trim()) && isValidUrl && (
+              <span
+                aria-label="Repository configured"
+                className={CONFIGURED_BADGE_CLASS}
+              >
+                Configured
+              </span>
+            )}
+          </span>
           <svg className="w-5 h-5 transform transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
@@ -167,11 +195,17 @@ const InputTabs: React.FC<InputTabsProps> = ({
         <div className="mt-4 space-y-4">
           <div>
             <input
-              type="text"
+              type="url"
               id="repo-url"
+              aria-labelledby="repo-url-summary"
               value={repoUrl}
               onChange={(e) => handleRepoUrlChange(e.target.value)}
               placeholder="https://github.com/user/repository.git"
+              aria-invalid={Boolean(repoUrl) && !isValidUrl}
+              aria-describedby={Boolean(repoUrl) && !isValidUrl ? 'repo-url-error' : undefined}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:focus:ring-primary-400 dark:focus:border-primary-400 ${
                 repoUrl && !isValidUrl
                   ? 'border-red-300 dark:border-red-600'
@@ -179,8 +213,8 @@ const InputTabs: React.FC<InputTabsProps> = ({
               }`}
             />
             {repoUrl && !isValidUrl && (
-              <p className="text-xs text-red-600 dark:text-red-400 mt-1">
-                Please enter a valid GitHub HTTPS URL (e.g., https://github.com/user/repo.git)
+              <p id="repo-url-error" aria-live="polite" className="text-xs text-red-600 dark:text-red-400 mt-1">
+                Please enter a valid GitHub HTTPS URL (e.g., https://github.com/user/repo or https://github.com/user/repo.git)
               </p>
             )}
           </div>
