@@ -73,6 +73,7 @@ const Settings: React.FC = () => {
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [apiKeyValidating, setApiKeyValidating] = useState(false);
   const [userEnteredNewApiKey, setUserEnteredNewApiKey] = useState(false);
+  const [attemptedAutoLoad, setAttemptedAutoLoad] = useState(false);
 
 
   // File upload state for restore
@@ -130,6 +131,7 @@ const Settings: React.FC = () => {
       setConnectionStatus({});
       setCanSave(false);
       setUserEnteredNewApiKey(false);
+      setAttemptedAutoLoad(false);
 
     }
   }, [settings]);
@@ -162,8 +164,8 @@ const Settings: React.FC = () => {
     // Check Jenkins configuration
     if (formData.jenkins.url) {
       configuredServices.push('jenkins');
-      // Only requires testing if new credentials are provided or if not previously configured
-      if (formData.jenkins.api_token || !secretsStatus?.jenkins?.api_token) {
+      // Only require testing if user provided new Jenkins secret in this form
+      if (formData.jenkins.api_token) {
         newlyConfiguredServices.push('jenkins');
       }
     }
@@ -171,7 +173,7 @@ const Settings: React.FC = () => {
     // Check GitHub configuration
     if (formData.github.token || secretsStatus?.github?.token) {
       configuredServices.push('github');
-      // Only requires testing if new token is provided
+      // Only require testing if user provided new GitHub token in this form
       if (formData.github.token) {
         newlyConfiguredServices.push('github');
       }
@@ -180,7 +182,7 @@ const Settings: React.FC = () => {
     // Check AI configuration
     if (formData.ai.gemini_api_key || secretsStatus?.ai?.gemini_api_key) {
       configuredServices.push('ai');
-      // Only requires testing if new API key is provided
+      // Only require testing if user provided new API key in this form
       if (formData.ai.gemini_api_key) {
         newlyConfiguredServices.push('ai');
       }
@@ -261,6 +263,7 @@ const Settings: React.FC = () => {
       return;
     }
 
+    setAttemptedAutoLoad(true);
     setModelsLoading(true);
     setModelsError(null);
 
@@ -271,25 +274,18 @@ const Settings: React.FC = () => {
       const hasFormData = Boolean(formData?.ai?.gemini_api_key);
 
       if (hasFormData) {
-        // Use form data to refresh models - test with current form values
-        const aiConfig = {
-          gemini_api_key: formData?.ai?.gemini_api_key || '',
-          model: formData?.ai?.model || '',
-          temperature: formData?.ai?.temperature || 0.7,
-          max_tokens: formData?.ai?.max_tokens || 4096
-        };
-
+        // Use unsaved API key from form to validate and fetch models
         try {
-          const result = await testConnectionWithConfig({ service: 'ai', config: aiConfig });
+          const modelsFetch = await fetchModelsWithApiKey(formData?.ai?.gemini_api_key || '');
           modelsResult = {
-            success: result.success,
-            models: (result as any).models || [],
-            error: (result as any).error_details || result.message
+            success: modelsFetch.success,
+            models: modelsFetch.models || [],
+            error: modelsFetch.error,
           };
         } catch (error) {
           modelsResult = {
             success: false,
-            error: error instanceof Error ? error.message : 'Failed to fetch models'
+            error: error instanceof Error ? error.message : 'Failed to fetch models',
           };
         }
       } else {
@@ -340,12 +336,12 @@ const Settings: React.FC = () => {
   useEffect(() => {
     if (formData && secretsStatus && activeTab === 'ai') {
       const hasApiKey = Boolean(formData.ai.gemini_api_key || secretsStatus?.ai?.gemini_api_key);
-      if (hasApiKey && availableModels.length === 0 && !modelsLoading) {
+      if (hasApiKey && availableModels.length === 0 && !modelsLoading && !attemptedAutoLoad) {
         // Auto-refresh models when on AI tab with valid API key but no models loaded
         handleRefreshModels();
       }
     }
-  }, [formData, secretsStatus, activeTab, availableModels.length, modelsLoading, handleRefreshModels]);
+  }, [formData, secretsStatus, activeTab, availableModels.length, modelsLoading, attemptedAutoLoad, handleRefreshModels]);
 
   // Helper function to safely convert any value to string for error display
   const getErrorMessage = (error: any): string => {
@@ -464,6 +460,7 @@ const Settings: React.FC = () => {
         if (field === 'gemini_api_key' && value && value.trim() !== '') {
           // Mark that user entered a new API key
           setUserEnteredNewApiKey(true);
+          setAttemptedAutoLoad(false);
           // Only clear models if a new non-empty API key is being entered
           newStatus.ai = { ...newStatus.ai, tested: false, result: undefined };
           setAvailableModels([]);

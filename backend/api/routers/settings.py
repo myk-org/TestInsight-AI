@@ -155,6 +155,7 @@ async def test_service_connection(service: str) -> ConnectionTestResult:
 
         elif service == "ai":
             try:
+                # Use saved settings when testing without provided config
                 service_config.test_ai_connection()
                 return ConnectionTestResult(
                     service="ai",
@@ -239,7 +240,8 @@ async def test_service_connection_with_config(request: TestConnectionWithParamsR
 
         elif service == "ai":
             try:
-                service_config.test_ai_connection()
+                # Use provided config for AI validation when explicitly testing with config
+                service_config.test_ai_connection_with_config(config)
                 return ConnectionTestResult(
                     service="ai",
                     success=True,
