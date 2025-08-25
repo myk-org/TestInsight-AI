@@ -1,6 +1,6 @@
 # Docker Compose for TestInsight AI - Production Environment
 services:
-  backend:
+  testinsight-backend-prod:
     build:
       context: .
       dockerfile: ./backend/Dockerfile
@@ -30,10 +30,10 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
+          cpus: "1.0"
           memory: 1G
         reservations:
-          cpus: '0.5'
+          cpus: "0.5"
           memory: 512M
     logging:
       driver: "json-file"
@@ -41,7 +41,7 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  frontend:
+  testinsight-frontend-prod:
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -51,12 +51,12 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      - REACT_APP_API_URL=http://localhost:8000
+      - VITE_API_URL=http://localhost:8000
     networks:
       - testinsight-network
     restart: always
     depends_on:
-      - backend
+      - testinsight-backend-prod
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000"]
       interval: 30s
@@ -66,10 +66,10 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.5'
+          cpus: "0.5"
           memory: 512M
         reservations:
-          cpus: '0.25'
+          cpus: "0.25"
           memory: 256M
     logging:
       driver: "json-file"

@@ -1,6 +1,6 @@
 # Docker Compose for TestInsight AI - Development Environment
 services:
-  backend:
+  testinsight-backend-dev:
     build:
       context: .
       dockerfile: ./backend/Dockerfile
@@ -33,7 +33,7 @@ services:
       retries: 3
       start_period: 10s
 
-  frontend:
+  testinsight-frontend-dev:
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -58,12 +58,10 @@ services:
       - testinsight-network
     restart: unless-stopped
     depends_on:
-      - backend
+      - testinsight-backend-dev
     command: npm start
     stdin_open: true
     tty: true
-
-
 
 networks:
   testinsight-network:
