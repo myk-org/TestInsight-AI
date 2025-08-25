@@ -18,9 +18,7 @@ services:
       - PYTHONPATH=/app
     env_file:
       - .env.production
-    networks:
-      - testinsight-network
-    restart: always
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -52,9 +50,7 @@ services:
     environment:
       - NODE_ENV=production
       - VITE_API_URL=http://localhost:8000
-    networks:
-      - testinsight-network
-    restart: always
+    restart: unless-stopped
     depends_on:
       - testinsight-backend-prod
     healthcheck:
@@ -76,8 +72,3 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-networks:
-  testinsight-network:
-    driver: bridge
-    name: testinsight-network-prod

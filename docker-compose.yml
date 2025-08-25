@@ -23,8 +23,6 @@ services:
       - PYTHONPATH=/app
     env_file:
       - .env
-    networks:
-      - testinsight-network
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -54,16 +52,9 @@ services:
       - NODE_ENV=development
       - VITE_API_URL=http://localhost:8000
       - CHOKIDAR_USEPOLLING=true
-    networks:
-      - testinsight-network
     restart: unless-stopped
     depends_on:
       - testinsight-backend-dev
     command: npm start
     stdin_open: true
     tty: true
-
-networks:
-  testinsight-network:
-    driver: bridge
-    name: testinsight-network
