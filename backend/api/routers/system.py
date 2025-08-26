@@ -25,22 +25,24 @@ async def get_service_status() -> dict[str, Any]:
     base_config = BaseServiceConfig()
     config_status = status_checkers.get_service_status()
 
-    # Test actual connections
+    # Test actual connections (only if configured)
     jenkins_available = False
     jenkins_url = "Not configured"
     logger = logging.getLogger("testinsight")
     try:
-        jenkins = client_creators.create_configured_jenkins_client()
-        if jenkins:
-            jenkins_available = jenkins.is_connected()
-            jenkins_url = jenkins.url or "Not configured"
+        if config_status.get("jenkins", {}).get("configured"):
+            jenkins = client_creators.create_configured_jenkins_client()
+            if jenkins:
+                jenkins_available = jenkins.is_connected()
+                jenkins_url = jenkins.url or "Not configured"
     except Exception:
         logger.exception("Jenkins status check failed")
 
     ai_available = False
     try:
-        client_creators.create_configured_ai_client()
-        ai_available = True
+        if config_status.get("ai", {}).get("configured"):
+            client_creators.create_configured_ai_client()
+            ai_available = True
     except Exception:
         logger.exception("AI status check failed")
 

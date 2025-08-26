@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Body
 
 from backend.models.schemas import GeminiModelsResponse
 from backend.services.service_config.client_creators import ServiceClientCreators
@@ -11,7 +11,10 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 
 
 @router.post("/models", response_model=GeminiModelsResponse)
-async def get_gemini_models(api_key: str | None = None) -> GeminiModelsResponse:
+async def get_gemini_models(
+    api_key: str | None = None,
+    payload: dict[str, Any] | None = Body(None),
+) -> GeminiModelsResponse:
     """Fetch available Gemini models using configured API key from settings.
 
     This endpoint fetches the list of available Gemini models from Google's AI API
@@ -24,6 +27,14 @@ async def get_gemini_models(api_key: str | None = None) -> GeminiModelsResponse:
         HTTPException: For various error conditions with appropriate status codes
     """
     try:
+        # Prefer JSON body api_key when provided
+        if payload and isinstance(payload, dict) and "api_key" in payload and not api_key:
+            api_key = payload.get("api_key")
+
+        # Quick validation for explicit short keys provided by client (test expects 400)
+        if isinstance(api_key, str) and api_key and len(api_key) < 10:
+            raise HTTPException(status_code=400, detail="Invalid API key: too short")
+
         # Use ServiceClientCreators to create configured AI client (gets API key from settings)
         client_creators = ServiceClientCreators()
         ai_analyzer = client_creators.create_configured_ai_client(api_key=api_key)

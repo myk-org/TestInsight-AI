@@ -38,6 +38,8 @@ class AnalysisRequest(BaseModel):
     repository_commit: str | None = Field(None, description="Repository commit hash to analyze")
     include_repository_context: bool = Field(False, description="Include repository source code in analysis")
     cloned_repo_path: str | None = None
+    repo_max_files: int | None = Field(None, description="Max repo files to include in context")
+    repo_max_bytes: int | None = Field(None, description="Max bytes per repo file to include")
 
 
 class AnalysisResponse(BaseModel):
@@ -75,9 +77,10 @@ class AISettings(BaseModel):
 class AppSettings(BaseModel):
     """Complete application settings."""
 
-    jenkins: JenkinsSettings = Field(default_factory=JenkinsSettings, description="Jenkins settings")
-    github: GitHubSettings = Field(default_factory=GitHubSettings, description="GitHub settings")
-    ai: AISettings = Field(default_factory=AISettings, description="AI settings")
+    # Use BaseModel defaults directly to avoid Pydantic Field default_factory typing issues
+    jenkins: JenkinsSettings = JenkinsSettings()
+    github: GitHubSettings = GitHubSettings()
+    ai: AISettings = AISettings()
     last_updated: datetime | None = Field(None, description="Last settings update timestamp")
 
 

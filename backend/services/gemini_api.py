@@ -185,7 +185,7 @@ class GeminiClient:
         attempts = max(1, self.retry_attempts)
         for attempt in range(1, attempts + 1):
             try:
-                config: dict[str, Any] = {
+                config: Any = {
                     "temperature": effective_temperature,
                     "max_output_tokens": effective_max_tokens,
                 }
@@ -213,9 +213,9 @@ class GeminiClient:
         # Normalize response content to a safe string to avoid None.strip errors downstream
         raw_text = getattr(response, "text", None)
         try:
-            content_str = raw_text if isinstance(raw_text, str) else (raw_text or "")
+            content_str = raw_text if isinstance(raw_text, str) else (str(response) if raw_text is None else raw_text)
         except Exception:  # pragma: no cover - defensive
-            content_str = ""
+            content_str = str(response)
 
         return {
             "success": True,

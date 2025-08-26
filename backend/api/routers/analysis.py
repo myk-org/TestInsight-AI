@@ -1,7 +1,6 @@
 """Analysis endpoints for TestInsight AI."""
 
 import logging
-import os
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -28,6 +27,9 @@ async def analyze(
 ) -> AnalysisResponse:
     """Analyze text content with AI (legacy endpoint)."""
     try:
+        # Early validation to avoid long-running work on empty input
+        if not text or not text.strip():
+            raise HTTPException(status_code=500, detail="Text content is empty; no analyzable content")
         logger.info(
             "Analyze(text): include_repo=%s repo_url=%s branch=%s commit=%s",
             include_repository_context,
@@ -70,16 +72,15 @@ async def analyze(
             repository_branch=repository_branch,
             repository_commit=repository_commit,
             include_repository_context=include_repository_context,
+            repo_max_files=repo_max_files,
+            repo_max_bytes=repo_max_bytes,
         )
 
-        # Add cloned path to request object for AI analyzer
+        # Add cloned path and repo limits to request object for AI analyzer
         if cloned_repo_path:
             request.cloned_repo_path = cloned_repo_path
-        # Pass limits via env for downstream extraction
-        if repo_max_files:
-            os.environ["AI_REPO_MAX_FILES"] = str(repo_max_files)
-        if repo_max_bytes:
-            os.environ["AI_REPO_MAX_FILE_BYTES"] = str(repo_max_bytes)
+        request.repo_max_files = repo_max_files
+        request.repo_max_bytes = repo_max_bytes
 
         analysis = ai_analyzer.analyze_test_results(request)
         logger.info(
@@ -235,15 +236,15 @@ async def analyze_file(
             repository_branch=repository_branch,
             repository_commit=repository_commit,
             include_repository_context=include_repository_context,
+            repo_max_files=repo_max_files,
+            repo_max_bytes=repo_max_bytes,
         )
 
-        # Add cloned path to request object for AI analyzer
+        # Add cloned path and repo limits to request object for AI analyzer
         if cloned_repo_path:
             request.cloned_repo_path = cloned_repo_path
-        if repo_max_files:
-            os.environ["AI_REPO_MAX_FILES"] = str(repo_max_files)
-        if repo_max_bytes:
-            os.environ["AI_REPO_MAX_FILE_BYTES"] = str(repo_max_bytes)
+        request.repo_max_files = repo_max_files
+        request.repo_max_bytes = repo_max_bytes
         analysis = ai_analyzer.analyze_test_results(request)
         logger.info(
             "Analyze(file): results insights=%d recommendations=%d summary_len=%d",
@@ -423,15 +424,15 @@ async def analyze_jenkins_build(
             repository_branch=repository_branch,
             repository_commit=repository_commit,
             include_repository_context=include_repository_context,
+            repo_max_files=repo_max_files,
+            repo_max_bytes=repo_max_bytes,
         )
 
-        # Add cloned path to request object for AI analyzer
+        # Add cloned path and repo limits to request object for AI analyzer
         if cloned_repo_path:
             request.cloned_repo_path = cloned_repo_path
-        if repo_max_files:
-            os.environ["AI_REPO_MAX_FILES"] = str(repo_max_files)
-        if repo_max_bytes:
-            os.environ["AI_REPO_MAX_FILE_BYTES"] = str(repo_max_bytes)
+        request.repo_max_files = repo_max_files
+        request.repo_max_bytes = repo_max_bytes
         analysis = ai_analyzer.analyze_test_results(request)
         logger.info(
             "Analyze(jenkins): results insights=%d recommendations=%d summary_len=%d",
