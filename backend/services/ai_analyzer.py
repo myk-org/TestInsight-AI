@@ -43,7 +43,15 @@ class AIAnalyzer:
 
         # Generate summary and recommendations
         summary = self._generate_summary(context, insights, request.system_prompt)
-        recommendations = self._generate_recommendations(context, insights, request.system_prompt)
+        recommendations = self._generate_recommendations(
+            context,
+            insights,
+            request.system_prompt,
+            repo_context_included=bool(
+                getattr(request, "include_repository_context", False)
+                and bool(getattr(request, "cloned_repo_path", None))
+            ),
+        )
 
         return AnalysisResponse(
             insights=insights,
@@ -215,7 +223,12 @@ class AIAnalyzer:
         return result["content"].strip()
 
     def _generate_recommendations(
-        self, context: str, insights: list[AIInsight], system_prompt: str | None = None
+        self,
+        context: str,
+        insights: list[AIInsight],
+        system_prompt: str | None = None,
+        *,
+        repo_context_included: bool = False,
     ) -> list[str]:
         """Generate actionable recommendations.
 
@@ -227,8 +240,29 @@ class AIAnalyzer:
         Returns:
             List of recommendations
         """
+        # Craft strict instructions. When repository code is included, request code snippets.
+        if repo_context_included:
+            strict_instructions = (
+                "Based on the analysis context and insights, provide concrete code-change recommendations. "
+                "Each recommendation MUST be a single string that includes: (1) a one-line rationale, and (2) one or more fenced code blocks "
+                "showing the exact changes (patches or full replacement) with the appropriate language tag. "
+                "Prefer minimal, copy-pastable snippets. If multiple files are involved, include file path comments at the top of each code block."
+            )
+            output_contract = (
+                "Return ONLY a JSON array of strings. No prose outside JSON. Example: "
+                '[\n  "Refactor X to avoid Y.\\n```python\\n# path: src/module.py\\n...new code...\\n```",\n  "Increase timeout...\\n```yaml\\n# path: .github/workflows/ci.yml\\n...yaml changes...\\n```"\n]'
+            )
+        else:
+            strict_instructions = (
+                "Based on the analysis context and insights, provide specific, actionable recommendations."
+            )
+            output_contract = (
+                "Return ONLY a JSON array of strings. No prose outside JSON. Example: "
+                '["Recommendation 1", "Recommendation 2"]'
+            )
+
         prompt = f"""
-        {system_prompt or "Based on the analysis context and insights, provide specific, actionable recommendations."}
+        {system_prompt or strict_instructions}
 
         Context Summary:
         {context}
@@ -236,18 +270,63 @@ class AIAnalyzer:
         Top Insights:
         {self._format_insights_for_prompt(insights)}
 
-        Return ONLY a List array of strings, no other text. Example format:
-        ["Recommendation 1", "Recommendation 2", "Recommendation 3", "Additional recommendations as needed"]
+        {output_contract}
         """
-        result = self.client.generate_content(prompt)
+        # Ask for strict JSON output. Some models still return prose; we'll salvage best-effort.
+        result = self.client.generate_content(prompt, response_mime_type="application/json")
         if not result["success"]:
             raise ConnectionError(f"AI content generation failed: {result['error']}")
 
-        try:
-            return json.loads(result["content"].strip())
-        except json.JSONDecodeError:
-            # Fallback if AI doesn't follow format
-            return []
+        raw = (result.get("content") or "").strip()
+
+        def _parse_as_list_of_strings(text: str) -> list[str] | None:
+            try:
+                data = json.loads(text)
+                if isinstance(data, list):
+                    # Accept list of strings or list of objects having 'text'/'recommendation'
+                    out: list[str] = []
+                    for item in data:
+                        if isinstance(item, str):
+                            out.append(item)
+                        elif isinstance(item, dict):
+                            for key in ("text", "recommendation", "value"):
+                                if key in item and isinstance(item[key], str):
+                                    out.append(item[key])
+                                    break
+                    return out
+            except Exception:
+                pass
+            # Try to isolate a bracketed JSON array
+            try:
+                start = text.find("[")
+                end = text.rfind("]")
+                if start != -1 and end != -1 and end > start:
+                    sub = text[start : end + 1]
+                    data = json.loads(sub)
+                    if isinstance(data, list):
+                        return [str(x) if not isinstance(x, str) else x for x in data]
+            except Exception:
+                pass
+            return None
+
+        parsed = _parse_as_list_of_strings(raw)
+
+        if parsed is not None and len(parsed) > 0:
+            return parsed
+
+        # If parsing failed or produced nothing, provide a sane fallback from insights
+        if insights:
+            fallback: list[str] = []
+            for ins in insights[:5]:
+                snippet = f"Focus: {ins.title} — address {ins.category.lower()} ({ins.severity.lower()})."
+                fallback.append(snippet)
+            return fallback
+
+        # Last resort: return the raw text as a single recommendation to avoid hiding content
+        if raw:
+            return [raw]
+
+        return []
 
     def _create_insight_from_dict(self, data: dict[str, Any]) -> AIInsight:
         """Create AIInsight from parsed data.

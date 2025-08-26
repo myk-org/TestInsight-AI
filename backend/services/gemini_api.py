@@ -210,8 +210,15 @@ class GeminiClient:
                     raise
                 time.sleep((self.retry_backoff_ms / 1000.0) * (2 ** (attempt - 1)))
 
+        # Normalize response content to a safe string to avoid None.strip errors downstream
+        raw_text = getattr(response, "text", None)
+        try:
+            content_str = raw_text if isinstance(raw_text, str) else (raw_text or "")
+        except Exception:  # pragma: no cover - defensive
+            content_str = ""
+
         return {
             "success": True,
-            "content": response.text if hasattr(response, "text") else str(response),
+            "content": str(content_str) if content_str is not None else "",
             "model": effective_model,
         }
