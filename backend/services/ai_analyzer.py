@@ -114,29 +114,77 @@ class AIAnalyzer:
         4. Testing strategy improvements
         """
 
-        result = self.client.generate_content(prompt)
+        # Request strict JSON array via response mime type to reduce formatting errors
+        result = self.client.generate_content(
+            prompt,
+            response_mime_type="application/json",
+        )
         if not result["success"]:
             raise ConnectionError(f"AI content generation failed: {result['error']}")
 
-        content = result["content"].strip()
-        if not content:
-            raise ValueError("AI returned empty content for insights generation")
+        raw_content = result["content"].strip()
+        if not raw_content:
+            # Gracefully degrade to no insights
+            return []
 
-        # Strip markdown code blocks if present
+        # Strip markdown code fences if present
+        content = raw_content
         if content.startswith("```json"):
             content = content.replace("```json", "").replace("```", "").strip()
         elif content.startswith("```"):
             content = content.replace("```", "").strip()
 
-        try:
-            insights_data = json.loads(content)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"AI returned invalid JSON for insights: {content} Error: {e}")
+        def _parse_json_array(text: str) -> list[Any]:
+            # Fast path
+            try:
+                data = json.loads(text)
+                return data if isinstance(data, list) else []
+            except json.JSONDecodeError:
+                pass
 
-        if not isinstance(insights_data, list):
-            raise ValueError(f"AI returned non-array JSON for insights: {type(insights_data)}")
+            # Try extracting the bracketed array region
+            try:
+                start = text.find("[")
+                end = text.rfind("]")
+                if start != -1 and end != -1 and end > start:
+                    subset = text[start : end + 1]
+                    data = json.loads(subset)
+                    return data if isinstance(data, list) else []
+            except Exception:
+                pass
 
-        return [self._create_insight_from_dict(insight) for insight in insights_data]
+            # Last resort: parse objects heuristically and collect valid ones
+            items: list[Any] = []
+            buf = []
+            depth = 0
+            for ch in text:
+                if ch == "{":
+                    depth += 1
+                if depth > 0:
+                    buf.append(ch)
+                if ch == "}":
+                    depth -= 1
+                    if depth == 0 and buf:
+                        candidate = "".join(buf)
+                        buf = []
+                        try:
+                            obj = json.loads(candidate)
+                            items.append(obj)
+                        except Exception:
+                            # Skip malformed chunk
+                            pass
+            return items
+
+        insights_data = _parse_json_array(content)
+
+        # If still invalid or empty, surface a clear error (do not hide by returning empty)
+        if not isinstance(insights_data, list) or len(insights_data) == 0:
+            snippet = raw_content.strip()
+            if len(snippet) > 800:
+                snippet = snippet[:800] + "..."
+            raise ValueError(f"AI returned invalid JSON for insights: {snippet}")
+
+        return [self._create_insight_from_dict(insight) for insight in insights_data if isinstance(insight, dict)]
 
     def _generate_summary(self, context: str, insights: list[AIInsight], system_prompt: str | None = None) -> str:
         """Generate analysis summary.

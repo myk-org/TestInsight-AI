@@ -151,9 +151,9 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ results }) => {
       </div>
 
       {/* Summary */}
-      <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-        <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Summary</h3>
-        <p className="text-sm text-gray-600 dark:text-gray-400">{results.summary}</p>
+      <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+        <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-2">Summary</h3>
+        <p className="text-base leading-relaxed text-gray-700 dark:text-gray-300">{results.summary}</p>
       </div>
 
       {/* Insights List */}

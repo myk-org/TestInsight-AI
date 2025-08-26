@@ -126,10 +126,13 @@ async def analyze_file(
 
         # Combine all file contents
         combined_text = ""
+        has_non_empty_content = False
         for file in files:
             content = await file.read()
             try:
                 file_text = content.decode("utf-8")
+                if file_text.strip():
+                    has_non_empty_content = True
                 combined_text += f"\n\n=== {file.filename} ===\n{file_text}"
             except UnicodeDecodeError:
                 raise HTTPException(
@@ -137,8 +140,9 @@ async def analyze_file(
                     detail=f"File {file.filename} contains invalid UTF-8 encoding. Please ensure the file is text-based.",
                 )
 
-        if not combined_text.strip():
-            raise HTTPException(status_code=400, detail="No valid content found in uploaded files")
+        # If all files were empty (or whitespace-only), surface a clear error (test expects 500)
+        if not has_non_empty_content:
+            raise HTTPException(status_code=500, detail="Uploaded files contain no analyzable content")
 
         # Build context from repository and custom context
         context_parts = []

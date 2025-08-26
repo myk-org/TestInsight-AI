@@ -1,7 +1,7 @@
 """Gemini API client using google-genai library."""
 
-import os
 import logging
+import os
 import time
 from typing import Any
 
@@ -151,7 +151,14 @@ class GeminiClient:
         )
 
     def generate_content(
-        self, prompt: str, model: str = "gemini-2.5-pro", temperature: float = 0.7, max_tokens: int = 4096
+        self,
+        prompt: str,
+        model: str = "gemini-2.5-pro",
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+        *,
+        response_mime_type: str | None = None,
+        response_schema: Any | None = None,
     ) -> dict[str, Any]:
         """Generate content using Gemini model.
 
@@ -178,13 +185,21 @@ class GeminiClient:
         attempts = max(1, self.retry_attempts)
         for attempt in range(1, attempts + 1):
             try:
+                config: dict[str, Any] = {
+                    "temperature": effective_temperature,
+                    "max_output_tokens": effective_max_tokens,
+                }
+                # Encourage strict machine-readable output when requested
+                if response_mime_type:
+                    config["response_mime_type"] = response_mime_type
+                if response_schema is not None:
+                    config["response_schema"] = response_schema
+
+                # Use kwargs to avoid strict typing issues in stubs
                 response = self.client.models.generate_content(
                     model=normalized_model,
                     contents=[{"parts": [{"text": prompt}]}],
-                    config={
-                        "temperature": effective_temperature,
-                        "max_output_tokens": effective_max_tokens,
-                    },
+                    config=config,
                 )
                 break
             except Exception as e:  # pragma: no cover - exercised via higher-level tests/mocks
