@@ -1,6 +1,7 @@
 """Analysis endpoints for TestInsight AI."""
 
 import logging
+import re
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -10,6 +11,23 @@ from backend.services.service_config.client_creators import ServiceClientCreator
 
 router = APIRouter(prefix="/analyze", tags=["analysis"])
 logger = logging.getLogger("testinsight")
+
+
+def _redact_repo_url(url: str | None) -> str | None:
+    """Redact embedded credentials/tokens from a repository URL for safe logging.
+
+    Examples:
+    - https://token@github.com/user/repo.git -> https://***@github.com/user/repo.git
+    - https://user:token@github.com/user/repo -> https://***:***@github.com/user/repo # pragma: allowlist secret
+    - http(s) basic auth patterns are replaced, leaving host/path intact.
+    """
+    if not url or not isinstance(url, str):
+        return url
+    try:
+        # Replace user or user:pass before '@'
+        return re.sub(r"https?://[^/@:]+(?::[^/@]*)?@", "https://***@", url)
+    except Exception:
+        return url
 
 
 @router.post("", response_model=AnalysisResponse)
@@ -30,10 +48,15 @@ async def analyze(
         # Early validation to avoid long-running work on empty input
         if not text or not text.strip():
             raise HTTPException(status_code=500, detail="Text content is empty; no analyzable content")
+        # Basic input validation and sensible upper bounds for repository limits
+        if repo_max_files is not None and (repo_max_files < 1 or repo_max_files > 500):
+            raise HTTPException(status_code=422, detail="repo_max_files must be between 1 and 500")
+        if repo_max_bytes is not None and (repo_max_bytes < 1024 or repo_max_bytes > 2_000_000):
+            raise HTTPException(status_code=422, detail="repo_max_bytes must be between 1KB and 2MB")
         logger.info(
             "Analyze(text): include_repo=%s repo_url=%s branch=%s commit=%s",
             include_repository_context,
-            repository_url,
+            _redact_repo_url(repository_url),
             repository_branch,
             repository_commit,
         )
@@ -57,7 +80,7 @@ async def analyze(
             else:
                 logger.info(
                     "Analyze(text): repo cloned ok url=%s branch=%s commit=%s path=%s",
-                    repository_url,
+                    _redact_repo_url(repository_url),
                     repository_branch,
                     repository_commit,
                     cloned_repo_path,
@@ -142,11 +165,16 @@ async def analyze_file(
         logger.info(
             "Analyze(file): include_repo=%s repo_url=%s branch=%s commit=%s file_count=%d",
             include_repository_context,
-            repo_url,
+            _redact_repo_url(repo_url),
             repository_branch,
             repository_commit,
             len(files or []),
         )
+        # Basic input validation and sensible upper bounds for repository limits
+        if repo_max_files is not None and (repo_max_files < 1 or repo_max_files > 500):
+            raise HTTPException(status_code=422, detail="repo_max_files must be between 1 and 500")
+        if repo_max_bytes is not None and (repo_max_bytes < 1024 or repo_max_bytes > 2_000_000):
+            raise HTTPException(status_code=422, detail="repo_max_bytes must be between 1KB and 2MB")
         if not files:
             raise HTTPException(status_code=400, detail="No files provided")
 
@@ -216,7 +244,7 @@ async def analyze_file(
             else:
                 logger.info(
                     "Analyze(file): repo cloned ok url=%s branch=%s commit=%s path=%s",
-                    repo_url,
+                    _redact_repo_url(repo_url),
                     repository_branch,
                     repository_commit,
                     cloned_repo_path,
@@ -305,11 +333,16 @@ async def analyze_jenkins_build(
             job_name,
             build_number,
             include_repository_context,
-            repo_url,
+            _redact_repo_url(repo_url),
             repository_branch,
             repository_commit,
             include_console,
         )
+        # Basic input validation and sensible upper bounds for repository limits
+        if repo_max_files is not None and (repo_max_files < 1 or repo_max_files > 500):
+            raise HTTPException(status_code=422, detail="repo_max_files must be between 1 and 500")
+        if repo_max_bytes is not None and (repo_max_bytes < 1024 or repo_max_bytes > 2_000_000):
+            raise HTTPException(status_code=422, detail="repo_max_bytes must be between 1KB and 2MB")
         # Default label used in error messages before we can resolve a concrete build number
         build_label: str = "unknown"
         client_creators = ServiceClientCreators()
@@ -404,7 +437,7 @@ async def analyze_jenkins_build(
             else:
                 logger.info(
                     "Analyze(jenkins): repo cloned ok url=%s branch=%s commit=%s path=%s",
-                    repo_url,
+                    _redact_repo_url(repo_url),
                     repository_branch,
                     repository_commit,
                     cloned_repo_path,
