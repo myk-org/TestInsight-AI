@@ -786,7 +786,7 @@ class TestEndpointErrorHandling:
         response = client.post("/api/v1/ai/models?api_key=" + FAKE_GEMINI_API_KEY)  # pragma: allowlist secret
 
         assert response.status_code == 500
-        assert "Failed to fetch Gemini models" in response.json()["detail"]
+        assert "Internal server error occurred while fetching models" in response.json()["detail"]
 
     @patch("backend.api.routers.settings.SettingsService")
     def test_settings_get_exception(self, mock_settings_service, client):

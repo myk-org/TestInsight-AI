@@ -37,7 +37,7 @@ class AIAnalyzer:
         Returns:
             Analysis response with insights
         """
-        logger.info(
+        logger.debug(
             "AIAnalyzer: analyze start text_len=%d include_repo=%s system_prompt=%s repo_url=%s branch=%s commit=%s",
             len(getattr(request, "text", "") or ""),
             getattr(request, "include_repository_context", False),
@@ -50,7 +50,8 @@ class AIAnalyzer:
         try:
             self._repo_max_files = getattr(request, "repo_max_files", None)
             self._repo_max_bytes = getattr(request, "repo_max_bytes", None)
-        except Exception:
+        except (AttributeError, TypeError) as e:
+            logger.debug("Failed to extract repo limits from request: %s", e)
             self._repo_max_files = None
             self._repo_max_bytes = None
 
@@ -68,7 +69,7 @@ class AIAnalyzer:
 
         # Generate summary and recommendations
         summary = self._generate_summary(context, insights, request.system_prompt)
-        logger.info("AIAnalyzer: summary generated len=%d", len(summary or ""))
+        logger.debug("AIAnalyzer: summary generated len=%d", len(summary or ""))
         recommendations = self._generate_recommendations(
             context,
             insights,
@@ -114,14 +115,14 @@ class AIAnalyzer:
                     context_parts.append("Repository Source Code Context:")
                     for file_path, content in repo_files:
                         context_parts.append(f"\n--- {file_path} ---\n{content}")
-                logger.info(
+                logger.debug(
                     "AIAnalyzer: repo files extracted count=%d files=%s",
                     len(repo_files),
                     [fp for fp, _ in repo_files],
                 )
 
         result_context = "\n\n".join(context_parts)
-        logger.info("AIAnalyzer: context ready len=%d", len(result_context))
+        logger.debug("AIAnalyzer: context ready len=%d", len(result_context))
         return result_context
 
     def _generate_insights(self, context: str, system_prompt: str | None = None) -> list[AIInsight]:
@@ -169,96 +170,176 @@ class AIAnalyzer:
             # Gracefully degrade to no insights
             return []
 
-        # Strip markdown code fences if present
-        content = raw_content
-        if content.startswith("```json"):
-            content = content.replace("```json", "").replace("```", "").strip()
-        elif content.startswith("```"):
-            content = content.replace("```", "").strip()
-
-        # Parsing strategy with explicit handling for truly invalid vs empty array
-        # 1) Direct parse
+        # Parse JSON response using multi-stage strategy
         try:
-            direct = json.loads(content)
-            if isinstance(direct, list):
-                if len(direct) == 0:
-                    logger.info("AIAnalyzer: insights parsed count=0 (empty array)")
-                    return []
-                insights_data = direct
+            cleaned_content = self._clean_content(raw_content)
+            insights_data = self._parse_json_response(cleaned_content)
+            return self._convert_to_insights(insights_data)
+        except ValueError as e:
+            logger.error("Failed to parse AI insights: %s", e)
+            raise
+
+    def _clean_content(self, raw_content: str) -> str:
+        """Clean AI response content by removing markdown fences.
+
+        Args:
+            raw_content: Raw AI response content
+
+        Returns:
+            Cleaned content ready for JSON parsing
+        """
+        content = raw_content.strip()
+
+        # Remove markdown code fences
+        if content.startswith("```json"):
+            content = content[7:]  # Remove "```json"
+            if content.endswith("```"):
+                content = content[:-3]  # Remove trailing "```"
+        elif content.startswith("```"):
+            content = content[3:]  # Remove "```"
+            if content.endswith("```"):
+                content = content[:-3]  # Remove trailing "```"
+
+        return content.strip()
+
+    def _parse_json_response(self, content: str) -> list[dict[str, Any]]:
+        """Parse JSON response using multiple fallback strategies.
+
+        Args:
+            content: Cleaned content to parse
+
+        Returns:
+            List of parsed insight dictionaries
+
+        Raises:
+            ValueError: If all parsing strategies fail
+        """
+        # Strategy 1: Direct JSON parsing
+        try:
+            parsed = json.loads(content)
+            if isinstance(parsed, list):
+                return parsed
+            elif isinstance(parsed, dict):
+                # Single object wrapped in array
+                return [parsed]
             else:
-                insights_data = []
-        except json.JSONDecodeError:
-            insights_data = None  # mark as not directly parsed
+                logger.warning("AI returned non-list/dict JSON: %s", type(parsed).__name__)
+                return []
+        except json.JSONDecodeError as e:
+            logger.debug("Direct JSON parse failed: %s", e)
 
-        # 2) Bracket extraction when direct parse failed
-        if insights_data is None:
-            start = content.find("[")
-            end = content.rfind("]")
-            if start != -1 and end != -1 and end > start:
-                subset = content[start : end + 1]
+        # Strategy 2: Extract JSON array from content
+        extracted_list = self._extract_json_array(content)
+        if extracted_list is not None:
+            return extracted_list
+
+        # Strategy 3: Extract individual JSON objects
+        extracted_objects = self._extract_json_objects(content)
+        if extracted_objects:
+            return extracted_objects
+
+        # All strategies failed
+        snippet = content[:200] + "..." if len(content) > 200 else content
+        raise ValueError(f"AI returned unparseable JSON content: {snippet}")
+
+    def _extract_json_array(self, content: str) -> list[dict[str, Any]] | None:
+        """Extract JSON array from content that may contain extra text.
+
+        Args:
+            content: Content that may contain a JSON array
+
+        Returns:
+            Parsed list or None if extraction fails
+        """
+        start = content.find("[")
+        end = content.rfind("]")
+
+        if start == -1 or end == -1 or end <= start:
+            return None
+
+        try:
+            json_subset = content[start : end + 1]
+            parsed = json.loads(json_subset)
+            if isinstance(parsed, list):
+                return parsed
+        except json.JSONDecodeError as e:
+            logger.debug("Array extraction failed: %s", e)
+
+        return None
+
+    def _extract_json_objects(self, content: str) -> list[dict[str, Any]]:
+        """Extract individual JSON objects from content using brace matching.
+
+        Args:
+            content: Content that may contain JSON objects
+
+        Returns:
+            List of successfully parsed objects
+        """
+        objects: list[dict[str, Any]] = []
+        buffer: list[str] = []
+        brace_depth = 0
+
+        for char in content:
+            if char == "{":
+                brace_depth += 1
+
+            if brace_depth > 0:
+                buffer.append(char)
+
+            if char == "}":
+                brace_depth -= 1
+                if brace_depth == 0 and buffer:
+                    # Try to parse the collected object
+                    try:
+                        candidate = "".join(buffer)
+                        obj = json.loads(candidate)
+                        if isinstance(obj, dict):
+                            objects.append(obj)
+                    except json.JSONDecodeError:
+                        pass  # Skip malformed objects
+                    finally:
+                        buffer.clear()
+
+        return objects
+
+    def _convert_to_insights(self, insights_data: list[dict[str, Any]]) -> list[AIInsight]:
+        """Convert parsed data to AIInsight objects.
+
+        Args:
+            insights_data: List of parsed insight dictionaries
+
+        Returns:
+            List of AIInsight objects
+        """
+        if not insights_data:
+            logger.debug("AIAnalyzer: insights parsed count=0 (empty array)")
+            return []
+
+        # Filter and convert valid dictionaries to insights
+        insights = []
+        for item in insights_data:
+            if isinstance(item, dict):
                 try:
-                    sub_parsed = json.loads(subset)
-                    if isinstance(sub_parsed, list):
-                        if len(sub_parsed) == 0:
-                            logger.info("AIAnalyzer: insights parsed count=0 (empty array)")
-                            return []
-                        insights_data = sub_parsed
-                except Exception:
-                    insights_data = None
+                    insight = self._create_insight_from_dict(item)
+                    insights.append(insight)
+                except Exception as e:
+                    logger.warning("Failed to create insight from dict: %s", e)
+                    continue
+            else:
+                logger.warning("Skipping non-dict insight item: %s", type(item).__name__)
 
-        # 3) Heuristic object collection (treat empty result as invalid)
-        if insights_data is None:
-            items: list[Any] = []
-            buf: list[str] = []
-            depth = 0
-            for ch in content:
-                if ch == "{":
-                    depth += 1
-                if depth > 0:
-                    buf.append(ch)
-                if ch == "}":
-                    depth -= 1
-                    if depth == 0 and buf:
-                        candidate = "".join(buf)
-                        buf = []
-                        try:
-                            obj = json.loads(candidate)
-                            items.append(obj)
-                        except Exception:
-                            pass
-            insights_data = items
-            if len(items) == 0:
-                snippet = raw_content.strip()
-                raise ValueError(f"AI returned invalid JSON for insights: {snippet}")
-
-        # At this point, insights_data is a non-empty list of dicts
-        if not isinstance(insights_data, list):
-            snippet = raw_content.strip()
-            raise ValueError(f"AI returned invalid JSON for insights: {snippet}")
-        # Normal path: convert to AIInsight list and return
-        parsed = [self._create_insight_from_dict(insight) for insight in insights_data if isinstance(insight, dict)]
-        logger.info("AIAnalyzer: insights parsed count=%d", len(parsed))
-        for i, ins in enumerate(parsed[:5]):
-            logger.info(
+        logger.info("AIAnalyzer: insights parsed count=%d", len(insights))
+        for i, insight in enumerate(insights):
+            logger.debug(
                 "AIAnalyzer: insight[%d] title=%s severity=%s category=%s",
                 i,
-                getattr(ins, "title", ""),
-                getattr(ins, "severity", ""),
-                getattr(ins, "category", ""),
+                insight.title,
+                insight.severity.value,
+                insight.category,
             )
-        return parsed
 
-        parsed = [self._create_insight_from_dict(insight) for insight in insights_data if isinstance(insight, dict)]
-        logger.info("AIAnalyzer: insights parsed count=%d", len(parsed))
-        for i, ins in enumerate(parsed[:5]):
-            logger.info(
-                "AIAnalyzer: insight[%d] title=%s severity=%s category=%s",
-                i,
-                getattr(ins, "title", ""),
-                getattr(ins, "severity", ""),
-                getattr(ins, "category", ""),
-            )
-        return parsed
+        return insights
 
     def _generate_summary(self, context: str, insights: list[AIInsight], system_prompt: str | None = None) -> str:
         """Generate analysis summary.
@@ -317,10 +398,10 @@ class AIAnalyzer:
             response_schema=response_schema,
         )
 
-        logger.info("AIAnalyzer: recommendations raw length=%d", len(raw))
+        logger.debug("AIAnalyzer: recommendations raw length=%d", len(raw))
         parsed = self._parse_recommendations_to_strings(raw)
         if parsed:
-            logger.info("AIAnalyzer: recommendations initial parsed count=%d", len(parsed))
+            logger.debug("AIAnalyzer: recommendations initial parsed count=%d", len(parsed))
             sanitized = self._sanitize_and_force_code_blocks(parsed, context, insights, repo_context_included)
             if sanitized:
                 return sanitized
@@ -345,7 +426,7 @@ class AIAnalyzer:
                 allowed_paths = [p.strip() for p in allowed_paths if p.strip()]
             except Exception:
                 allowed_paths = []
-            logger.info(
+            logger.debug(
                 "AIAnalyzer: repo-context strict mode enabled; allowed_paths=%d sample=%s",
                 len(allowed_paths),
                 allowed_paths,
@@ -505,7 +586,7 @@ class AIAnalyzer:
 
         parsed = [_strip_diff_headers(s) if isinstance(s, str) else s for s in recs]
         code_like = sum(1 for s in parsed if isinstance(s, str) and "```" in s)
-        logger.info(
+        logger.debug(
             "AIAnalyzer: recommendations parsed count=%d code_blocks=%d",
             len(parsed),
             code_like,

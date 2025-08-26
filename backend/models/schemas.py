@@ -128,3 +128,9 @@ class TestConnectionWithParamsRequest(BaseModel):
 
     service: str = Field(..., description="Service to test (jenkins, github, ai)")
     config: dict[str, Any] = Field(..., description="Configuration parameters for the service")
+
+
+class AIRequest(BaseModel):
+    """Request body for AI endpoints with optional API key override."""
+
+    api_key: str | None = Field(None, description="Optional API key to override configured key")
