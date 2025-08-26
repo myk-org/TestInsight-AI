@@ -1,5 +1,20 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import 'prismjs/themes/prism-tomorrow.css';
 import { AnalysisResult, AIInsight } from '../App';
+
+// Lazy-load Prism for syntax highlighting
+let prism: any = null;
+const ensurePrism = async () => {
+  if (!prism) {
+    prism = await import('prismjs');
+    await import('prismjs/components/prism-python');
+    await import('prismjs/components/prism-json');
+    await import('prismjs/components/prism-yaml');
+    await import('prismjs/components/prism-bash');
+    await import('prismjs/components/prism-diff');
+  }
+  return prism;
+};
 
 interface ResultsDisplayProps {
   results: AnalysisResult;
@@ -8,6 +23,14 @@ interface ResultsDisplayProps {
 const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ results }) => {
   const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set());
   const [filterSeverity, setFilterSeverity] = useState<'all' | 'high' | 'critical'>('all');
+
+  useEffect(() => {
+    (async () => {
+      const p = await ensurePrism();
+      // Highlight after DOM updates
+      setTimeout(() => p.highlightAll(), 0);
+    })();
+  }, [results]);
 
   const toggleCard = (index: number) => {
     const newExpanded = new Set(expandedCards);
@@ -263,13 +286,84 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ results }) => {
       {results.recommendations.length > 0 && (
         <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
           <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-3">Recommendations</h3>
-          <ul className="space-y-2">
-            {results.recommendations.map((recommendation, index) => (
-              <li key={index} className="text-sm text-gray-600 dark:text-gray-300 flex items-start">
-                <span className="text-green-500 mr-2 flex-shrink-0">✓</span>
-                {recommendation}
-              </li>
-            ))}
+          <ul className="space-y-4">
+            {results.recommendations.map((recommendation, index) => {
+              // Normalize some common AI fence mistakes like ``python → ```python\n
+              const normalizeFences = (text: string) => {
+                let t = text.replace(/^``\s*([a-zA-Z0-9_+\-]+)\s*$/gm, '```$1\n');
+                // Ensure closing fence if missing (best effort)
+                const opens = (t.match(/```/g) || []).length;
+                if (opens % 2 === 1) {
+                  t += '\n```';
+                }
+                return t;
+              };
+
+              const rec = normalizeFences(recommendation);
+              const blocks: Array<{ type: 'text' | 'code'; content: string; lang?: string }> = [];
+
+              const codeRegex = /```([a-zA-Z0-9_+\-]+)?\n([\s\S]*?)```/g;
+              let lastIndex = 0;
+              let match: RegExpExecArray | null;
+              while ((match = codeRegex.exec(rec)) !== null) {
+                if (match.index > lastIndex) {
+                  blocks.push({ type: 'text', content: rec.slice(lastIndex, match.index) });
+                }
+                blocks.push({ type: 'code', lang: match[1] || 'text', content: match[2].trimEnd() });
+                lastIndex = codeRegex.lastIndex;
+              }
+              if (lastIndex < rec.length) {
+                blocks.push({ type: 'text', content: rec.slice(lastIndex) });
+              }
+
+              const hasText = blocks.some((b) => b.type === 'text' && b.content.trim().length > 0);
+
+              return (
+                <li key={index} className="text-sm text-gray-700 dark:text-gray-300">
+                  <div className="flex items-start">
+                    {hasText ? (
+                      <span className="text-green-500 mr-2 flex-shrink-0">✓</span>
+                    ) : (
+                      <span className="mr-2 w-3 h-4 inline-block" />
+                    )}
+                    <div className="space-y-3 w-full">
+                      {blocks.map((b, i) => {
+                        if (b.type === 'code') {
+                          // Extract optional path header from the first line
+                          const extractPathHeader = (lang: string | undefined, code: string) => {
+                            const lines = code.split('\n');
+                            const first = (lines[0] || '').trim();
+                            const pathMatch = first.match(/^(?:#|\/\/|--)?\s*path\s*:\s*(.+)$/i);
+                            if (pathMatch) {
+                              const cleaned = lines.slice(1).join('\n').replace(/^\n+/, '');
+                              return { path: pathMatch[1].trim(), code: cleaned };
+                            }
+                            return { path: null as string | null, code };
+                          };
+                          const { path, code } = extractPathHeader(b.lang, b.content);
+
+                          return (
+                            <div key={i} className="space-y-1">
+                              {path && (
+                                <div className="text-sm font-medium text-gray-400 dark:text-gray-300">path: {path}</div>
+                              )}
+                              <pre className="bg-gray-900 dark:bg-gray-900/80 text-gray-100 p-3 rounded-md overflow-auto text-xs sm:text-sm">
+                                <code className={`language-${b.lang}`}>{code}</code>
+                              </pre>
+                            </div>
+                          );
+                        }
+                        return (
+                          <p key={i} className="whitespace-pre-wrap break-words leading-relaxed">
+                            {b.content.trim()}
+                          </p>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
