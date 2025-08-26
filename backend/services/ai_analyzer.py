@@ -500,10 +500,10 @@ class AIAnalyzer:
         allowed_paths: list[str],
     ) -> list[str]:
         forced_instructions = (
-            "Return ONLY a JSON array of strings. Each string MUST contain at least one fenced code block whose opening fence includes a language tag and"
-            " 'path: <relative-file-path>' on the same line. The path MUST be one of the following: "
-            + ", ".join([f"'{p}'" for p in allowed_paths])
-            + ". Do NOT invent files. Do NOT output unified diffs or git headers."
+            "Return ONLY a JSON array of objects with this schema: "
+            "[{ path: <one of the allowed paths>, language: <language>, code: <string>, rationale?: <string> }]. "
+            "For each object you MUST output a single fenced code block in the final string using the fence format ```{language} path: {path}. "
+            "Do NOT invent files. Do NOT output unified diffs or git headers."
         )
         retry_prompt = f"""
         {forced_instructions}
@@ -514,16 +514,34 @@ class AIAnalyzer:
         Top Insights:
         {self._format_insights_for_prompt(insights)}
         """
+        # Enforce a strict response schema to maximize the chance of valid code output
+        response_schema = {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "enum": allowed_paths},
+                    "language": {"type": "string"},
+                    "rationale": {"type": "string"},
+                    "code": {"type": "string"},
+                },
+                "required": ["path", "language", "code"],
+            },
+            "minItems": 1,
+        }
+
         result = self.client.generate_content(
             retry_prompt,
             response_mime_type="application/json",
-            temperature=0.1,
+            temperature=0.05,
+            response_schema=response_schema,
         )
         if result.get("success"):
             retry_raw = (result.get("content") or "").strip()
             retry_parsed = self._parse_recommendations_to_strings(retry_raw)
             if retry_parsed:
-                return retry_parsed
+                # Final sanitation pass (diff headers, etc.)
+                return self._sanitize_and_force_code_blocks(retry_parsed, context, insights, True)
         return []
 
     def _force_single_file(
