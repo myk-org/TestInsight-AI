@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useSettings, AppSettings, SettingsUpdate, ConnectionTestResult } from '../contexts/SettingsContext';
+import { useSettings, AppSettings, SettingsUpdate, ConnectionTestResult, defaultSettings } from '../contexts/SettingsContext';
 import { validateGeminiApiKey, fetchGeminiModels, getSecretsStatus, testConnectionWithConfig } from '../services/api';
 
 interface FormErrors {
@@ -39,6 +39,7 @@ const Settings: React.FC = () => {
     settings,
     loading,
     error,
+    fetchSettings,
     updateSettings,
     resetSettings,
     testConnection,
@@ -46,8 +47,8 @@ const Settings: React.FC = () => {
     restoreSettings,
   } = useSettings();
 
-  const [formData, setFormData] = useState<AppSettings | null>(null);
-  const [originalSettings, setOriginalSettings] = useState<AppSettings | null>(null);
+  const [formData, setFormData] = useState<AppSettings>(defaultSettings);
+  const [originalSettings, setOriginalSettings] = useState<AppSettings>(defaultSettings);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -940,23 +941,9 @@ const Settings: React.FC = () => {
     return null;
   };
 
-  if (loading && !formData) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 dark:border-primary-400"></div>
-        <span className="ml-3 text-gray-600 dark:text-gray-400">Loading settings...</span>
-      </div>
-    );
-  }
-
-  if (!formData) {
-    return (
-      <div className="p-8 text-center">
-        <div className="text-red-600 dark:text-red-400">Failed to load settings</div>
-        {error && <div className="text-sm text-gray-600 dark:text-gray-400 mt-2">{error}</div>}
-      </div>
-    );
-  }
+  const [loadingStartedAt] = useState<number>(() => Date.now());
+  const elapsedLoadingMs = Date.now() - loadingStartedAt;
+  const stalled = loading && elapsedLoadingMs > 10000;
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
@@ -969,6 +956,26 @@ const Settings: React.FC = () => {
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                 Configure your TestInsight AI application settings
               </p>
+              {loading && (
+                <div className="mt-2 flex items-center gap-3">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary-600 dark:border-primary-400"></div>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Loading saved settings…</span>
+                  {stalled && (
+                    <button
+                      type="button"
+                      onClick={() => fetchSettings()}
+                      className="px-2 py-1 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
+                    >
+                      Retry
+                    </button>
+                  )}
+                </div>
+              )}
+              {error && (
+                <div className="mt-2 text-sm text-amber-600 dark:text-amber-400">
+                  Failed to load saved settings. You can still edit and save below.
+                </div>
+              )}
             </div>
             <div className="flex flex-col sm:flex-row gap-3">
               {/* Backup/Restore Section */}

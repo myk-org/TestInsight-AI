@@ -1,5 +1,7 @@
 """Analysis endpoints for TestInsight AI."""
 
+import logging
+import os
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -8,6 +10,7 @@ from backend.models.schemas import AnalysisRequest, AnalysisResponse
 from backend.services.service_config.client_creators import ServiceClientCreators
 
 router = APIRouter(prefix="/analyze", tags=["analysis"])
+logger = logging.getLogger("testinsight")
 
 
 @router.post("", response_model=AnalysisResponse)
@@ -20,9 +23,18 @@ async def analyze(
     repository_commit: str | None = Form(None, description="Repository commit hash to analyze"),
     include_repository_context: bool = Form(False, description="Include repository source code in analysis"),
     api_key: str | None = Form(None, description="Gemini API key (uses settings if not provided)"),
+    repo_max_files: int | None = Form(None, description="Max repo files to include"),
+    repo_max_bytes: int | None = Form(None, description="Max bytes per repo file"),
 ) -> AnalysisResponse:
     """Analyze text content with AI (legacy endpoint)."""
     try:
+        logger.info(
+            "Analyze(text): include_repo=%s repo_url=%s branch=%s commit=%s",
+            include_repository_context,
+            repository_url,
+            repository_branch,
+            repository_commit,
+        )
         client_creators = ServiceClientCreators()
         ai_analyzer = client_creators.create_configured_ai_client(api_key=api_key)
         if not ai_analyzer:
@@ -30,15 +42,24 @@ async def analyze(
 
         # Clone repository if requested
         cloned_repo_path = None
+        warning_note: str | None = None
         if include_repository_context and repository_url:
             try:
                 git_client = client_creators.create_configured_git_client(
                     repo_url=repository_url, branch=repository_branch, commit=repository_commit
                 )
                 cloned_repo_path = str(git_client.repo_path)
-            except Exception:
+            except Exception as e:
                 # Fallback: continue without repository context if cloning fails
-                pass
+                warning_note = f"Repository cloning failed: {str(e)}. Proceeding without repository context."
+            else:
+                logger.info(
+                    "Analyze(text): repo cloned ok url=%s branch=%s commit=%s path=%s",
+                    repository_url,
+                    repository_branch,
+                    repository_commit,
+                    cloned_repo_path,
+                )
 
         # Create request with repository information
         request = AnalysisRequest(
@@ -54,11 +75,26 @@ async def analyze(
         # Add cloned path to request object for AI analyzer
         if cloned_repo_path:
             request.cloned_repo_path = cloned_repo_path
+        # Pass limits via env for downstream extraction
+        if repo_max_files:
+            os.environ["AI_REPO_MAX_FILES"] = str(repo_max_files)
+        if repo_max_bytes:
+            os.environ["AI_REPO_MAX_FILE_BYTES"] = str(repo_max_bytes)
 
         analysis = ai_analyzer.analyze_test_results(request)
+        logger.info(
+            "Analyze(text): results insights=%d recommendations=%d summary_len=%d",
+            len(analysis.insights),
+            len(analysis.recommendations),
+            len(analysis.summary or ""),
+        )
+
+        summary_text = analysis.summary
+        if warning_note:
+            summary_text = f"Note: {warning_note}\n\n{summary_text}"
 
         return AnalysisResponse(
-            insights=analysis.insights, summary=analysis.summary, recommendations=analysis.recommendations
+            insights=analysis.insights, summary=summary_text, recommendations=analysis.recommendations
         )
     except HTTPException:
         raise
@@ -76,6 +112,8 @@ async def analyze_file(
     custom_context: str | None = Form(None, description="Additional context"),
     system_prompt: str | None = Form(None, description="Custom system prompt for the AI"),
     api_key: str | None = Form(None, description="Gemini API key (uses settings if not provided)"),
+    repo_max_files: int | None = Form(None, description="Max repo files to include"),
+    repo_max_bytes: int | None = Form(None, description="Max bytes per repo file"),
 ) -> AnalysisResponse:
     """Analyze uploaded files with AI.
 
@@ -100,6 +138,14 @@ async def analyze_file(
     }
 
     try:
+        logger.info(
+            "Analyze(file): include_repo=%s repo_url=%s branch=%s commit=%s file_count=%d",
+            include_repository_context,
+            repo_url,
+            repository_branch,
+            repository_commit,
+            len(files or []),
+        )
         if not files:
             raise HTTPException(status_code=400, detail="No files provided")
 
@@ -156,15 +202,24 @@ async def analyze_file(
         # Clone repository if requested
         client_creators = ServiceClientCreators()
         cloned_repo_path = None
+        warning_note: str | None = None
         if include_repository_context and repo_url:
             try:
                 git_client = client_creators.create_configured_git_client(
                     repo_url=repo_url, branch=repository_branch, commit=repository_commit
                 )
                 cloned_repo_path = str(git_client.repo_path)
-            except Exception:
+            except Exception as e:
                 # Fallback: continue without repository context if cloning fails
-                pass
+                warning_note = f"Repository cloning failed: {str(e)}. Proceeding without repository context."
+            else:
+                logger.info(
+                    "Analyze(file): repo cloned ok url=%s branch=%s commit=%s path=%s",
+                    repo_url,
+                    repository_branch,
+                    repository_commit,
+                    cloned_repo_path,
+                )
 
         # Analyze with AI
         ai_analyzer = client_creators.create_configured_ai_client(api_key=api_key)
@@ -185,10 +240,24 @@ async def analyze_file(
         # Add cloned path to request object for AI analyzer
         if cloned_repo_path:
             request.cloned_repo_path = cloned_repo_path
+        if repo_max_files:
+            os.environ["AI_REPO_MAX_FILES"] = str(repo_max_files)
+        if repo_max_bytes:
+            os.environ["AI_REPO_MAX_FILE_BYTES"] = str(repo_max_bytes)
         analysis = ai_analyzer.analyze_test_results(request)
+        logger.info(
+            "Analyze(file): results insights=%d recommendations=%d summary_len=%d",
+            len(analysis.insights),
+            len(analysis.recommendations),
+            len(analysis.summary or ""),
+        )
+
+        summary_text = analysis.summary
+        if warning_note:
+            summary_text = f"Note: {warning_note}\n\n{summary_text}"
 
         return AnalysisResponse(
-            insights=analysis.insights, summary=analysis.summary, recommendations=analysis.recommendations
+            insights=analysis.insights, summary=summary_text, recommendations=analysis.recommendations
         )
     except HTTPException:
         raise
@@ -211,6 +280,8 @@ async def analyze_jenkins_build(
     jenkins_password: str | None = Form(None, description="Jenkins API token (uses settings if not provided)"),
     verify_ssl: bool | None = Form(None, description="Verify SSL (uses settings if not provided)"),
     api_key: str | None = Form(None, description="Gemini API key (uses settings if not provided)"),
+    repo_max_files: int | None = Form(None, description="Max repo files to include"),
+    repo_max_bytes: int | None = Form(None, description="Max bytes per repo file"),
 ) -> AnalysisResponse:
     """Analyze Jenkins build output with AI.
 
@@ -228,6 +299,16 @@ async def analyze_jenkins_build(
         AI analysis results with insights, summary, and recommendations
     """
     try:
+        logger.info(
+            "Analyze(jenkins): job=%s build=%s include_repo=%s repo_url=%s branch=%s commit=%s include_console=%s",
+            job_name,
+            build_number,
+            include_repository_context,
+            repo_url,
+            repository_branch,
+            repository_commit,
+            include_console,
+        )
         # Default label used in error messages before we can resolve a concrete build number
         build_label: str = "unknown"
         client_creators = ServiceClientCreators()
@@ -269,6 +350,7 @@ async def analyze_jenkins_build(
             if final_build_number is None:
                 raise HTTPException(status_code=404, detail=f"Latest build for job {job_name} has no build number")
             test_report = jenkins_client.get_build_test_report(job_name, final_build_number)
+        logger.info("Analyze(jenkins): resolved build_number=%s", final_build_number)
 
         # Update build label for subsequent error messages
         build_label = str(final_build_number) if final_build_number is not None else "latest"
@@ -308,15 +390,24 @@ async def analyze_jenkins_build(
 
         # Clone repository if requested
         cloned_repo_path = None
+        warning_note: str | None = None
         if include_repository_context and repo_url:
             try:
                 git_client = client_creators.create_configured_git_client(
                     repo_url=repo_url, branch=repository_branch, commit=repository_commit
                 )
                 cloned_repo_path = str(git_client.repo_path)
-            except Exception:
+            except Exception as e:
                 # Fallback: continue without repository context if cloning fails
-                pass
+                warning_note = f"Repository cloning failed: {str(e)}. Proceeding without repository context."
+            else:
+                logger.info(
+                    "Analyze(jenkins): repo cloned ok url=%s branch=%s commit=%s path=%s",
+                    repo_url,
+                    repository_branch,
+                    repository_commit,
+                    cloned_repo_path,
+                )
 
         # Analyze with AI
         ai_analyzer = client_creators.create_configured_ai_client(api_key=api_key)
@@ -337,10 +428,24 @@ async def analyze_jenkins_build(
         # Add cloned path to request object for AI analyzer
         if cloned_repo_path:
             request.cloned_repo_path = cloned_repo_path
+        if repo_max_files:
+            os.environ["AI_REPO_MAX_FILES"] = str(repo_max_files)
+        if repo_max_bytes:
+            os.environ["AI_REPO_MAX_FILE_BYTES"] = str(repo_max_bytes)
         analysis = ai_analyzer.analyze_test_results(request)
+        logger.info(
+            "Analyze(jenkins): results insights=%d recommendations=%d summary_len=%d",
+            len(analysis.insights),
+            len(analysis.recommendations),
+            len(analysis.summary or ""),
+        )
+
+        summary_text = analysis.summary
+        if warning_note:
+            summary_text = f"Note: {warning_note}\n\n{summary_text}"
 
         return AnalysisResponse(
-            insights=analysis.insights, summary=analysis.summary, recommendations=analysis.recommendations
+            insights=analysis.insights, summary=summary_text, recommendations=analysis.recommendations
         )
     except HTTPException:
         raise

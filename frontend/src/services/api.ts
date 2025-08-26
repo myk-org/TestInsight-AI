@@ -41,7 +41,8 @@ const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || "http://localhost
 
 const api = axios.create({
   baseURL: `${API_BASE_URL}/api/v1`,
-  timeout: 300000, // 5 minutes timeout for analysis
+  // Remove hard timeout; allow long-running analyses to complete
+  timeout: 0,
 });
 
 export interface JenkinsConfig {
@@ -132,6 +133,8 @@ export const analyzeText = async (
     branch?: string;
     commit?: string;
     includeContext?: boolean;
+    maxFiles?: number;
+    maxBytes?: number;
   },
   systemPrompt?: string
 ): Promise<AnalysisResult> => {
@@ -157,6 +160,12 @@ export const analyzeText = async (
     }
     if (repositoryConfig.includeContext) {
       formData.append("include_repository_context", "true");
+    }
+    if (repositoryConfig.maxFiles) {
+      formData.append("repo_max_files", String(repositoryConfig.maxFiles));
+    }
+    if (repositoryConfig.maxBytes) {
+      formData.append("repo_max_bytes", String(repositoryConfig.maxBytes));
     }
   }
 
@@ -226,6 +235,8 @@ export const analyzeJenkinsBuild = async (
     branch?: string;
     commit?: string;
     includeContext?: boolean;
+    maxFiles?: number;
+    maxBytes?: number;
   },
   systemPrompt?: string,
   includeConsole?: boolean
@@ -250,6 +261,12 @@ export const analyzeJenkinsBuild = async (
       }
       if (repositoryConfig.includeContext) {
         formData.append("include_repository_context", "true");
+      }
+      if (repositoryConfig.maxFiles) {
+        formData.append("repo_max_files", String(repositoryConfig.maxFiles));
+      }
+      if (repositoryConfig.maxBytes) {
+        formData.append("repo_max_bytes", String(repositoryConfig.maxBytes));
       }
     }
 

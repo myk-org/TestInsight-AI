@@ -6,6 +6,8 @@ interface TextInputProps {
   repoUrl: string;
   branch: string;
   commit: string;
+  repoMaxFiles: number;
+  repoMaxBytes: number;
   systemPrompt: string;
   onAnalysisStart: () => void;
   onAnalysisComplete: (results: AnalysisResult) => void;
@@ -17,6 +19,8 @@ const TextInput: React.FC<TextInputProps> = ({
   branch,
   commit,
   systemPrompt,
+  repoMaxFiles,
+  repoMaxBytes,
   onAnalysisStart,
   onAnalysisComplete,
   onAnalysisError,
@@ -47,7 +51,9 @@ const TextInput: React.FC<TextInputProps> = ({
         url: repoUrl.trim(),
         branch: branch?.trim() || undefined,
         commit: commit?.trim() || undefined,
-        includeContext: includeRepoContext
+        includeContext: includeRepoContext,
+        maxFiles: repoMaxFiles,
+        maxBytes: repoMaxBytes
       } : undefined;
 
       const results = await analyzeTextLog(logText.trim(), logType, repositoryConfig, systemPrompt);

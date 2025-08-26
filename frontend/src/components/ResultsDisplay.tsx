@@ -6,7 +6,8 @@ import { AnalysisResult, AIInsight } from '../App';
 let prism: any = null;
 const ensurePrism = async () => {
   if (!prism) {
-    prism = await import('prismjs');
+    const mod: any = await import('prismjs');
+    prism = mod?.default ?? mod;
     await import('prismjs/components/prism-python');
     await import('prismjs/components/prism-json');
     await import('prismjs/components/prism-yaml');
@@ -26,9 +27,9 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ results }) => {
 
   useEffect(() => {
     (async () => {
-      const p = await ensurePrism();
+      await ensurePrism();
       // Highlight after DOM updates
-      setTimeout(() => p.highlightAll(), 0);
+      setTimeout(() => prism && prism.highlightAll(), 0);
     })();
   }, [results]);
 
@@ -300,16 +301,17 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ results }) => {
               };
 
               const rec = normalizeFences(recommendation);
-              const blocks: Array<{ type: 'text' | 'code'; content: string; lang?: string }> = [];
+              const blocks: Array<{ type: 'text' | 'code'; content: string; lang?: string; path?: string | null }> = [];
 
-              const codeRegex = /```([a-zA-Z0-9_+\-]+)?\n([\s\S]*?)```/g;
+              // Support opening fence with language and optional path on the same line, e.g. ```python path: file.py
+              const codeRegex = /```([a-zA-Z0-9_+\-]+)(?:\s+path:\s*([^\n`]+))?\n([\s\S]*?)```/g;
               let lastIndex = 0;
               let match: RegExpExecArray | null;
               while ((match = codeRegex.exec(rec)) !== null) {
                 if (match.index > lastIndex) {
                   blocks.push({ type: 'text', content: rec.slice(lastIndex, match.index) });
                 }
-                blocks.push({ type: 'code', lang: match[1] || 'text', content: match[2].trimEnd() });
+                blocks.push({ type: 'code', lang: match[1] || 'text', path: (match[2] || null)?.trim() || null, content: match[3].trimEnd() });
                 lastIndex = codeRegex.lastIndex;
               }
               if (lastIndex < rec.length) {
@@ -329,25 +331,29 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ results }) => {
                     <div className="space-y-3 w-full">
                       {blocks.map((b, i) => {
                         if (b.type === 'code') {
-                          // Extract optional path header from the first line
+                          // Extract optional path header from the first line (fallback when fence lacks path)
                           const extractPathHeader = (lang: string | undefined, code: string) => {
                             const lines = code.split('\n');
                             const first = (lines[0] || '').trim();
-                            const pathMatch = first.match(/^(?:#|\/\/|--)?\s*path\s*:\s*(.+)$/i);
+                            const pathMatch = first.match(/^(?:#|\/\/|--)\s*path\s*:\s*(.+)$/i);
                             if (pathMatch) {
                               const cleaned = lines.slice(1).join('\n').replace(/^\n+/, '');
                               return { path: pathMatch[1].trim(), code: cleaned };
                             }
                             return { path: null as string | null, code };
                           };
-                          const { path, code } = extractPathHeader(b.lang, b.content);
+                          // Prefer path parsed from the code fence (b.path), else look for header inside the code
+                          const fencePath = (b as any).path as string | undefined;
+                          const extracted = extractPathHeader(b.lang, b.content);
+                          const path = (fencePath && fencePath.trim()) || extracted.path;
+                          const code = extracted.code;
 
                           return (
                             <div key={i} className="space-y-1">
                               {path && (
                                 <div className="text-sm font-medium text-gray-400 dark:text-gray-300">path: {path}</div>
                               )}
-                              <pre className="bg-gray-900 dark:bg-gray-900/80 text-gray-100 p-3 rounded-md overflow-auto text-xs sm:text-sm">
+                              <pre className={`language-${b.lang} bg-gray-900 dark:bg-gray-900/80 text-gray-100 p-3 rounded-md overflow-auto text-xs sm:text-sm`}>
                                 <code className={`language-${b.lang}`}>{code}</code>
                               </pre>
                             </div>

@@ -107,16 +107,23 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
     setError(null);
 
     try {
+      const startedAt = Date.now();
       const response = await fetch(`${API_BASE_URL}/api/v1/settings`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
         },
       });
+      const elapsed = Date.now() - startedAt;
+      console.info('SettingsContext: GET /settings completed in', elapsed, 'ms, status=', response.status);
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `HTTP ${response.status}`);
+        let detail: string | undefined;
+        try {
+          const errorData = await response.json();
+          detail = errorData?.detail;
+        } catch {}
+        throw new Error(detail || `HTTP ${response.status}`);
       }
 
       const data = await response.json();
@@ -124,7 +131,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
     } catch (err: any) {
       const errorMessage = handleApiError(err);
       setError(errorMessage);
-      console.error('Failed to fetch settings:', err);
+      console.error('SettingsContext: Failed to fetch settings:', err);
     } finally {
       setLoading(false);
     }
