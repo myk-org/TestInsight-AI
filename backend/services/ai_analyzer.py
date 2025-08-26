@@ -24,7 +24,7 @@ class AIAnalyzer:
         """Initialize AI analyzer.
 
         Args:
-            gemini_client: Gemini client instance from gemini_api.py
+            client: Gemini client instance from gemini_api.py
         """
         self.client = client
 
@@ -190,15 +190,9 @@ class AIAnalyzer:
         """
         content = raw_content.strip()
 
-        # Remove markdown code fences
-        if content.startswith("```json"):
-            content = content[7:]  # Remove "```json"
-            if content.endswith("```"):
-                content = content[:-3]  # Remove trailing "```"
-        elif content.startswith("```"):
-            content = content[3:]  # Remove "```"
-            if content.endswith("```"):
-                content = content[:-3]  # Remove trailing "```"
+        # Remove markdown code fences (e.g., ```json, ```JSON, ``` with optional language)
+        content = re.sub(r"^\s*```[a-zA-Z]*\s*\n?", "", content)
+        content = re.sub(r"\n?```\s*$", "", content)
 
         return content.strip()
 
@@ -688,7 +682,7 @@ class AIAnalyzer:
         if result.get("success"):
             single_raw = (result.get("content") or "").strip()
             single_parsed = self._parse_recommendations_to_strings(single_raw)
-            return single_parsed
+            return self._sanitize_and_force_code_blocks(single_parsed, context, insights, True)
 
         return []
 
@@ -707,11 +701,11 @@ class AIAnalyzer:
             "HIGH": Severity.HIGH,
             "CRITICAL": Severity.CRITICAL,
         }
-
+        sev_key = str(data.get("severity", "MEDIUM")).strip().upper()
         return AIInsight(
             title=data.get("title", "Unknown Issue"),
             description=data.get("description", "No description available"),
-            severity=severity_map.get(data.get("severity", "MEDIUM"), Severity.MEDIUM),
+            severity=severity_map.get(sev_key, Severity.MEDIUM),
             category=data.get("category", "General"),
             suggestions=data.get("suggestions", []),
             confidence=data.get("confidence", 0.7),
@@ -789,7 +783,7 @@ class AIAnalyzer:
                         else:
                             # Fallback: avoid brittle mocks, provide minimal placeholder
                             content = ""
-                        relative_path = str(file_path.relative_to(repo_path))
+                        relative_path = str(file_path.resolve().relative_to(repo_path.resolve()))
                         if relative_path not in seen_paths:
                             seen_paths.add(relative_path)
                             files.append((relative_path, content))
@@ -813,9 +807,9 @@ class AIAnalyzer:
                         continue
                     # Try direct path first - ensure resolved path stays under repo_path
                     direct = (repo_path / candidate).resolve()
-                    # Security check: ensure resolved path is within repository root
+                    # Security check: ensure resolved path is within repository root (use resolved base)
                     try:
-                        direct.relative_to(repo_path)
+                        direct.relative_to(repo_path.resolve())
                         file_path = direct if direct.exists() and direct.is_file() else None
                     except ValueError:
                         # Path is outside repository root - skip it
@@ -829,7 +823,7 @@ class AIAnalyzer:
                             with file_path.open("rb") as fh:
                                 chunk = fh.read(max_file_bytes)
                                 content = chunk.decode("utf-8", errors="ignore")
-                            relative_path = str(file_path.relative_to(repo_path))
+                            relative_path = str(file_path.resolve().relative_to(repo_path.resolve()))
                             if relative_path not in seen_paths:
                                 seen_paths.add(relative_path)
                                 files.append((relative_path, content))

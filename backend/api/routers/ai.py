@@ -11,6 +11,37 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 logger = logging.getLogger(__name__)
 
 
+def _merge_and_validate_api_key(query_api_key: str | None, request_body: AIRequest | None) -> str | None:
+    """Merge and validate API key from query parameter and request body.
+
+    Args:
+        query_api_key: API key from query parameter
+        request_body: Request body containing optional API key
+
+    Returns:
+        Validated API key or None
+
+    Raises:
+        HTTPException: If API key is invalid
+    """
+    api_key = query_api_key
+    if request_body and request_body.api_key is not None:
+        api_key = request_body.api_key
+
+    if api_key is None:
+        return None
+
+    if not isinstance(api_key, str):
+        raise HTTPException(status_code=400, detail="Invalid API key: must be a string")
+
+    api_key = api_key.strip()
+    if not api_key:
+        return None
+    if len(api_key) < 10:
+        raise HTTPException(status_code=400, detail="Invalid API key: too short")
+    return api_key
+
+
 @router.post("/models", response_model=GeminiModelsResponse)
 async def get_gemini_models(
     api_key: str | None = None,
@@ -28,22 +59,8 @@ async def get_gemini_models(
         HTTPException: For various error conditions with appropriate status codes
     """
     try:
-        # Prefer JSON body api_key when provided (unconditional body precedence)
-        if request_body and request_body.api_key is not None:
-            api_key = request_body.api_key
-
-        # Validate and normalize api_key early to avoid TypeError/500s
-        if api_key is not None:
-            # Ensure api_key is a string, reject non-string types with 400
-            if not isinstance(api_key, str):
-                raise HTTPException(status_code=400, detail="Invalid API key: must be a string")
-
-            # Trim whitespace and treat empty strings as missing
-            api_key = api_key.strip()
-            if not api_key:  # Empty string after stripping
-                api_key = None
-            elif len(api_key) < 10:  # Quick validation for explicit short keys (test expects 400)
-                raise HTTPException(status_code=400, detail="Invalid API key: too short")
+        # Normalize and validate api_key (shared helper)
+        api_key = _merge_and_validate_api_key(api_key, request_body)
 
         # Use ServiceClientCreators to create configured AI client (gets API key from settings)
         client_creators = ServiceClientCreators()
@@ -69,6 +86,8 @@ async def get_gemini_models(
                         "api key",
                         "auth",
                         "credential",
+                        "invalid token",
+                        "token expired",
                     ]
                 ):
                     raise HTTPException(status_code=401, detail=error_detail)
@@ -76,14 +95,28 @@ async def get_gemini_models(
                 # Permission/access errors (403)
                 elif any(
                     term in combined_error
-                    for term in ["permission denied", "access denied", "forbidden", "not allowed"]
+                    for term in [
+                        "permission denied",
+                        "access denied",
+                        "forbidden",
+                        "not allowed",
+                        "insufficient permissions",
+                    ]
                 ):
                     raise HTTPException(status_code=403, detail=error_detail)
 
                 # Rate limiting/quota errors (429)
                 elif any(
                     term in combined_error
-                    for term in ["quota exceeded", "rate limit", "too many requests", "quota", "rate", "throttle"]
+                    for term in [
+                        "quota exceeded",
+                        "rate limit",
+                        "too many requests",
+                        "quota",
+                        "rate",
+                        "throttle",
+                        "quota limit",
+                    ]
                 ):
                     raise HTTPException(status_code=429, detail=error_detail)
 
@@ -152,22 +185,7 @@ async def validate_gemini_api_key(
         Dictionary with validation result and connection test information
     """
     try:
-        # Prefer JSON body api_key when provided (align with models endpoint)
-        if request_body and request_body.api_key is not None:
-            api_key = request_body.api_key
-
-        # Validate and normalize api_key early to avoid TypeError/500s
-        if api_key is not None:
-            # Ensure api_key is a string, reject non-string types with 400
-            if not isinstance(api_key, str):
-                raise HTTPException(status_code=400, detail="Invalid API key: must be a string")
-
-            # Trim whitespace and treat empty strings as missing
-            api_key = api_key.strip()
-            if not api_key:  # Empty string after stripping
-                api_key = None
-            elif len(api_key) < 10:  # Quick validation for explicit short keys
-                raise HTTPException(status_code=400, detail="Invalid API key: too short")
+        api_key = _merge_and_validate_api_key(api_key, request_body)
 
         # Follow the endpoint pattern: use ServiceClientCreators with create_configured_*
         client_creators = ServiceClientCreators()

@@ -77,10 +77,10 @@ class AISettings(BaseModel):
 class AppSettings(BaseModel):
     """Complete application settings."""
 
-    # Use BaseModel defaults directly to avoid Pydantic Field default_factory typing issues
-    jenkins: JenkinsSettings = JenkinsSettings()
-    github: GitHubSettings = GitHubSettings()
-    ai: AISettings = AISettings()
+    # Create fresh nested models per AppSettings instance
+    jenkins: JenkinsSettings = Field(default_factory=JenkinsSettings)
+    github: GitHubSettings = Field(default_factory=GitHubSettings)
+    ai: AISettings = Field(default_factory=AISettings)
     last_updated: datetime | None = Field(None, description="Last settings update timestamp")
 
 
