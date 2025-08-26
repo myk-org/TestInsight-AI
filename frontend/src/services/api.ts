@@ -227,7 +227,8 @@ export const analyzeJenkinsBuild = async (
     commit?: string;
     includeContext?: boolean;
   },
-  systemPrompt?: string
+  systemPrompt?: string,
+  includeConsole?: boolean
 ): Promise<AnalysisResult> => {
   try {
     // Use the dedicated Jenkins analysis endpoint
@@ -250,6 +251,10 @@ export const analyzeJenkinsBuild = async (
       if (repositoryConfig.includeContext) {
         formData.append("include_repository_context", "true");
       }
+    }
+
+    if (includeConsole) {
+      formData.append("include_console", "true");
     }
 
     const response = await api.post("/analyze/jenkins", formData, {

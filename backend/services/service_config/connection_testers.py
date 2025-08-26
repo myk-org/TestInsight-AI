@@ -41,8 +41,22 @@ class ServiceConnectionTesters(BaseServiceConfig):
                 url=url, username=username, password=password, verify_ssl=verify_ssl
             )
 
-            if not client.is_connected():
-                raise ConnectionError("Jenkins connection failed")
+            # Prefer explicit calls to surface useful error details rather than a boolean check
+            try:
+                version = client.get_version()
+            except Exception as e:
+                raise ConnectionError(f"Jenkins connection error while fetching version: {str(e)}")
+
+            if not version:
+                raise ConnectionError("Jenkins did not return a server version header")
+
+            # Validate credentials by calling an authenticated endpoint
+            try:
+                whoami = getattr(client, "get_whoami", None)
+                if callable(whoami):
+                    whoami()
+            except Exception as e:
+                raise ConnectionError(f"Jenkins authentication failed: {str(e)}")
 
             return True
         except ValueError as e:

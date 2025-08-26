@@ -16,6 +16,7 @@ async def get_jenkins_jobs(
     username: str | None = None,
     password: str | None = None,
     verify_ssl: bool | None = None,
+    folder_depth: int = 3,
 ) -> dict[str, Any]:
     """Get list of Jenkins jobs with optional search.
 
@@ -45,12 +46,16 @@ async def get_jenkins_jobs(
             )
 
         if search:
-            jobs = jenkins_client.search_jobs(search)
+            jobs = jenkins_client.search_jobs(search, folder_depth=folder_depth)
         else:
-            jobs = jenkins_client.list_jobs()
+            jobs = jenkins_client.list_jobs(folder_depth=folder_depth)
 
-        # Extract just the names for dropdown
-        job_names = [job.get("name", "") for job in jobs if job.get("name")]
+        # Prefer full job path/name when available to disambiguate nested jobs
+        job_names = []
+        for job in jobs:
+            name = job.get("fullname") or job.get("fullName") or job.get("name")
+            if name:
+                job_names.append(name)
 
         return {"jobs": job_names, "total": len(job_names), "search_query": search}
     except HTTPException:

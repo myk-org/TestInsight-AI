@@ -40,6 +40,16 @@ const JenkinsForm: React.FC<JenkinsFormProps> = ({
     buildNumber: '',
   });
   const [includeRepoContext, setIncludeRepoContext] = useState(false);
+  const [includeConsole, setIncludeConsole] = useState(false);
+
+  // Disable and reset includeRepoContext when repo URL is not provided
+  useEffect(() => {
+    if (!repoUrl || !repoUrl.trim()) {
+      if (includeRepoContext) {
+        setIncludeRepoContext(false);
+      }
+    }
+  }, [repoUrl, includeRepoContext]);
 
   // Populate form with saved settings
   useEffect(() => {
@@ -143,7 +153,13 @@ const JenkinsForm: React.FC<JenkinsFormProps> = ({
         includeContext: includeRepoContext
       } : undefined;
 
-      const results = await analyzeJenkinsBuild(jenkinsConfig, repositoryConfig, systemPrompt);
+      // Pass includeConsole via analyzeJenkinsBuild invocation
+      const results = await analyzeJenkinsBuild(
+        { ...jenkinsConfig, jobName: jenkinsConfig.jobName, buildNumber: jenkinsConfig.buildNumber },
+        repositoryConfig,
+        systemPrompt,
+        includeConsole
+      );
       onAnalysisComplete(results);
     } catch (error) {
       onAnalysisError(error instanceof Error ? error.message : 'Failed to analyze Jenkins build');
@@ -297,18 +313,33 @@ const JenkinsForm: React.FC<JenkinsFormProps> = ({
         </div>
       </div>
 
-      {/* Repository Context Option */}
-      {isFormValid && repoUrl && (
+      {/* Repository Context Option - always visible */}
+      <div className="flex items-center space-x-2 pt-4 border-t border-gray-200 dark:border-gray-700">
+        <input
+          type="checkbox"
+          id="includeRepoContextJenkins"
+          checked={includeRepoContext}
+          onChange={(e) => setIncludeRepoContext(e.target.checked)}
+          disabled={!repoUrl || !repoUrl.trim()}
+          className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:focus:ring-primary-400 disabled:opacity-50 disabled:cursor-not-allowed"
+        />
+        <label htmlFor="includeRepoContextJenkins" className="text-sm text-gray-700 dark:text-gray-300">
+          Include repository source code in analysis (slower but more accurate)
+        </label>
+      </div>
+
+      {/* Include Console Output Option */}
+      {isFormValid && (
         <div className="flex items-center space-x-2 pt-4 border-t border-gray-200 dark:border-gray-700">
           <input
             type="checkbox"
-            id="includeRepoContextJenkins"
-            checked={includeRepoContext}
-            onChange={(e) => setIncludeRepoContext(e.target.checked)}
+            id="includeConsoleOutputJenkins"
+            checked={includeConsole}
+            onChange={(e) => setIncludeConsole(e.target.checked)}
             className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:focus:ring-primary-400"
           />
-          <label htmlFor="includeRepoContextJenkins" className="text-sm text-gray-700 dark:text-gray-300">
-            Include repository source code in analysis (slower but more accurate)
+          <label htmlFor="includeConsoleOutputJenkins" className="text-sm text-gray-700 dark:text-gray-300">
+            Include Jenkins console output in analysis
           </label>
         </div>
       )}

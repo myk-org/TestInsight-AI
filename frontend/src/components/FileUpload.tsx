@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { AnalysisResult } from '../App';
 import { analyzeXMLFiles } from '../services/api';
@@ -24,6 +24,15 @@ const FileUpload: React.FC<FileUploadProps> = ({
 }) => {
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [includeRepoContext, setIncludeRepoContext] = useState(false);
+
+  // Disable and reset includeRepoContext when repo URL is not provided
+  useEffect(() => {
+    if (!repoUrl || !repoUrl.trim()) {
+      if (includeRepoContext) {
+        setIncludeRepoContext(false);
+      }
+    }
+  }, [repoUrl, includeRepoContext]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     // Filter for XML files
@@ -158,21 +167,20 @@ const FileUpload: React.FC<FileUploadProps> = ({
         </div>
       )}
 
-      {/* Repository Context Option */}
-      {uploadedFiles.length > 0 && repoUrl && (
-        <div className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            id="includeRepoContext"
-            checked={includeRepoContext}
-            onChange={(e) => setIncludeRepoContext(e.target.checked)}
-            className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:focus:ring-primary-400"
-          />
-          <label htmlFor="includeRepoContext" className="text-sm text-gray-700 dark:text-gray-300">
-            Include repository source code in analysis (slower but more accurate)
-          </label>
-        </div>
-      )}
+      {/* Repository Context Option - always visible */}
+      <div className="flex items-center space-x-2">
+        <input
+          type="checkbox"
+          id="includeRepoContext"
+          checked={includeRepoContext}
+          onChange={(e) => setIncludeRepoContext(e.target.checked)}
+          disabled={!repoUrl || !repoUrl.trim()}
+          className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:focus:ring-primary-400 disabled:opacity-50 disabled:cursor-not-allowed"
+        />
+        <label htmlFor="includeRepoContext" className="text-sm text-gray-700 dark:text-gray-300">
+          Include repository source code in analysis (slower but more accurate)
+        </label>
+      </div>
 
       {/* Analyze Button */}
       {uploadedFiles.length > 0 && (

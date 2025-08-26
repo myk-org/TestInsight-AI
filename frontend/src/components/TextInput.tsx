@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AnalysisResult } from '../App';
 import { analyzeTextLog } from '../services/api';
 
@@ -24,6 +24,15 @@ const TextInput: React.FC<TextInputProps> = ({
   const [logText, setLogText] = useState('');
   const [logType, setLogType] = useState<'console' | 'junit' | 'testng' | 'pytest' | 'other'>('console');
   const [includeRepoContext, setIncludeRepoContext] = useState(false);
+
+  // Disable and reset includeRepoContext when repo URL is not provided
+  useEffect(() => {
+    if (!repoUrl || !repoUrl.trim()) {
+      if (includeRepoContext) {
+        setIncludeRepoContext(false);
+      }
+    }
+  }, [repoUrl, includeRepoContext]);
 
   const handleAnalyze = async () => {
     if (!logText.trim()) {
@@ -136,21 +145,20 @@ Example formats supported:
         </div>
       </div>
 
-      {/* Repository Context Option */}
-      {logText.trim() && repoUrl && (
-        <div className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            id="includeRepoContextText"
-            checked={includeRepoContext}
-            onChange={(e) => setIncludeRepoContext(e.target.checked)}
-            className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:focus:ring-primary-400"
-          />
-          <label htmlFor="includeRepoContextText" className="text-sm text-gray-700 dark:text-gray-300">
-            Include repository source code in analysis (slower but more accurate)
-          </label>
-        </div>
-      )}
+      {/* Repository Context Option - always visible */}
+      <div className="flex items-center space-x-2">
+        <input
+          type="checkbox"
+          id="includeRepoContextText"
+          checked={includeRepoContext}
+          onChange={(e) => setIncludeRepoContext(e.target.checked)}
+          disabled={!repoUrl || !repoUrl.trim()}
+          className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:focus:ring-primary-400 disabled:opacity-50 disabled:cursor-not-allowed"
+        />
+        <label htmlFor="includeRepoContextText" className="text-sm text-gray-700 dark:text-gray-300">
+          Include repository source code in analysis (slower but more accurate)
+        </label>
+      </div>
 
       {/* Analyze Button */}
       {logText.trim() && (

@@ -200,6 +200,7 @@ async def analyze_jenkins_build(
     repository_branch: str | None = Form(None, description="Repository branch to analyze"),
     repository_commit: str | None = Form(None, description="Repository commit hash to analyze"),
     include_repository_context: bool = Form(False, description="Include repository source code in analysis"),
+    include_console: bool = Form(False, description="Include Jenkins console output in analysis"),
     system_prompt: str | None = Form(None, description="Custom system prompt for the AI"),
     jenkins_url: str | None = Form(None, description="Jenkins URL (uses settings if not provided)"),
     jenkins_username: str | None = Form(None, description="Jenkins username (uses settings if not provided)"),
@@ -223,6 +224,8 @@ async def analyze_jenkins_build(
         AI analysis results with insights, summary, and recommendations
     """
     try:
+        # Default label used in error messages before we can resolve a concrete build number
+        build_label: str = "unknown"
         client_creators = ServiceClientCreators()
 
         # Get Jenkins client with provided or configured parameters
@@ -244,9 +247,12 @@ async def analyze_jenkins_build(
             try:
                 final_build_number = int(build_number.strip())
             except ValueError:
-                raise HTTPException(status_code=400, detail="Build number must be a valid integer")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Build number must be a valid integer for job {job_name}",
+                )
 
-        # Get console output from Jenkins
+        # Get test report (and optionally console output) from Jenkins
         if final_build_number:
             test_report = jenkins_client.get_build_test_report(job_name, final_build_number)
         else:
@@ -260,8 +266,35 @@ async def analyze_jenkins_build(
                 raise HTTPException(status_code=404, detail=f"Latest build for job {job_name} has no build number")
             test_report = jenkins_client.get_build_test_report(job_name, final_build_number)
 
-        if test_report is None:
-            raise HTTPException(status_code=404, detail=f"Test report not found for build {final_build_number}")
+        # Update build label for subsequent error messages
+        build_label = str(final_build_number) if final_build_number is not None else "latest"
+
+        console_output: str | None = None
+        if include_console:
+            try:
+                # JenkinsClient from python-jenkins exposes get_build_console_output
+                console_output = jenkins_client.get_build_console_output(job_name, final_build_number)
+            except Exception:
+                # If console retrieval fails, continue with test report only
+                console_output = None
+
+        # Combine contents for AI analysis
+        combined_text = str(test_report) if test_report is not None else ""
+        if include_console and console_output:
+            combined_text = f"{combined_text}\n\n=== Jenkins Console Output (Job: {job_name}, Build: {final_build_number}) ===\n{console_output}"
+
+        # If both test report and console output are unavailable, return 404
+        if not combined_text.strip():
+            # Provide actionable hint when console analysis is not enabled
+            hint = (
+                " Hint: enable 'Include Jenkins console output' to analyze console logs when the test report is missing."
+                if not include_console
+                else ""
+            )
+            raise HTTPException(
+                status_code=404,
+                detail=f"No analyzable content found for job {job_name}, build {build_label}.{hint}",
+            )
 
         # Build context
         context_parts = [f"Jenkins job: {job_name}", f"Build: {final_build_number}"]
@@ -288,7 +321,7 @@ async def analyze_jenkins_build(
 
         # Create request with repository information
         request = AnalysisRequest(
-            text=str(test_report) if test_report else "",
+            text=combined_text if combined_text else "",
             custom_context=final_context,
             system_prompt=system_prompt,
             repository_url=repo_url,
@@ -308,4 +341,12 @@ async def analyze_jenkins_build(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Jenkins analysis failed: {str(e)}")
+        # Use best-effort context for clearer error reporting
+        try:
+            build_label  # noqa: B018 - just ensure variable exists
+        except Exception:
+            build_label = "unknown"
+        raise HTTPException(
+            status_code=500,
+            detail=f"Jenkins analysis failed for job {job_name}, build {build_label}: {str(e)}",
+        )

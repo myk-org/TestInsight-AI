@@ -58,7 +58,13 @@ class JenkinsClient(jenkins.Jenkins):
         """
         return self.get_all_jobs(folder_depth=folder_depth)
 
-    def search_jobs(self, query: str, case_sensitive: bool = False, max_distance: int = 2) -> list[dict[str, Any]]:
+    def search_jobs(
+        self,
+        query: str,
+        case_sensitive: bool = False,
+        max_distance: int = 2,
+        folder_depth: int = 3,
+    ) -> list[dict[str, Any]]:
         """Search for jobs by name using fuzzy matching with fuzzysearch library.
 
         Args:
@@ -69,7 +75,8 @@ class JenkinsClient(jenkins.Jenkins):
         Returns:
             List of matching job information sorted by relevance
         """
-        all_jobs = self.list_jobs()
+        # Retrieve jobs with configurable folder depth so nested jobs are included
+        all_jobs = self.list_jobs(folder_depth=folder_depth)
         if not query:
             return all_jobs
 

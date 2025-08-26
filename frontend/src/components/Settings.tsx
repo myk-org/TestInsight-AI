@@ -636,8 +636,26 @@ const Settings: React.FC = () => {
     }
 
     try {
-      const result = await testConnectionWithConfig({ service: 'jenkins', config: jenkinsConfig });
-      return result;
+      if (jenkinsConfig.api_token) {
+        // Test with new credentials provided in the form
+        const result = await testConnectionWithConfig({ service: 'jenkins', config: jenkinsConfig });
+        return result;
+      } else {
+        // No new token provided – test using existing configured settings on the backend
+        const response = await fetch(`${(import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'}/api/v1/settings/test-connection?service=jenkins`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.detail || `HTTP ${response.status}`);
+        }
+
+        return result;
+      }
     } catch (error) {
       return {
         service: 'jenkins',
