@@ -730,9 +730,15 @@ class AIAnalyzer:
                     candidate = candidate.strip()
                     if not candidate:
                         continue
-                    # Try direct path first
+                    # Try direct path first - ensure resolved path stays under repo_path
                     direct = (repo_path / candidate).resolve()
-                    file_path = direct if direct.exists() and direct.is_file() else None
+                    # Security check: ensure resolved path is within repository root
+                    try:
+                        direct.relative_to(repo_path)
+                        file_path = direct if direct.exists() and direct.is_file() else None
+                    except ValueError:
+                        # Path is outside repository root - skip it
+                        file_path = None
                     if not file_path:
                         # Fallback to basename search
                         basename = Path(candidate).name

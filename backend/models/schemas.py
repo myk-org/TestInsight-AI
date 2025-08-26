@@ -38,8 +38,8 @@ class AnalysisRequest(BaseModel):
     repository_commit: str | None = Field(None, description="Repository commit hash to analyze")
     include_repository_context: bool = Field(False, description="Include repository source code in analysis")
     cloned_repo_path: str | None = None
-    repo_max_files: int | None = Field(None, description="Max repo files to include in context")
-    repo_max_bytes: int | None = Field(None, description="Max bytes per repo file to include")
+    repo_max_files: int | None = Field(None, ge=1, description="Max repo files to include in context")
+    repo_max_bytes: int | None = Field(None, ge=1024, description="Max bytes per repo file to include")
 
 
 class AnalysisResponse(BaseModel):

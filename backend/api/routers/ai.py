@@ -31,9 +31,18 @@ async def get_gemini_models(
         if payload and isinstance(payload, dict) and "api_key" in payload and not api_key:
             api_key = payload.get("api_key")
 
-        # Quick validation for explicit short keys provided by client (test expects 400)
-        if isinstance(api_key, str) and api_key and len(api_key) < 10:
-            raise HTTPException(status_code=400, detail="Invalid API key: too short")
+        # Validate and normalize api_key early to avoid TypeError/500s
+        if api_key is not None:
+            # Ensure api_key is a string, reject non-string types with 400
+            if not isinstance(api_key, str):
+                raise HTTPException(status_code=400, detail="Invalid API key: must be a string")
+
+            # Trim whitespace and treat empty strings as missing
+            api_key = api_key.strip()
+            if not api_key:  # Empty string after stripping
+                api_key = None
+            elif len(api_key) < 10:  # Quick validation for explicit short keys (test expects 400)
+                raise HTTPException(status_code=400, detail="Invalid API key: too short")
 
         # Use ServiceClientCreators to create configured AI client (gets API key from settings)
         client_creators = ServiceClientCreators()
