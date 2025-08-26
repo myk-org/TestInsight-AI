@@ -134,3 +134,10 @@ class AIRequest(BaseModel):
     """Request body for AI endpoints with optional API key override."""
 
     api_key: str | None = Field(None, description="Optional API key to override configured key")
+
+
+class KeyValidationResponse(BaseModel):
+    """Response from API key validation."""
+
+    valid: bool = Field(..., description="Whether the API key is valid")
+    message: str = Field(..., description="Validation result message")

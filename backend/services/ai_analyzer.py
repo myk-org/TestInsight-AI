@@ -46,17 +46,17 @@ class AIAnalyzer:
             getattr(request, "repository_branch", None),
             getattr(request, "repository_commit", None),
         )
-        # Stash repo limits on the analyzer instance for downstream file extraction
+        # Extract repo limits from request (no instance storage to avoid concurrency issues)
         try:
-            self._repo_max_files = getattr(request, "repo_max_files", None)
-            self._repo_max_bytes = getattr(request, "repo_max_bytes", None)
+            repo_max_files = getattr(request, "repo_max_files", None)
+            repo_max_bytes = getattr(request, "repo_max_bytes", None)
         except (AttributeError, TypeError) as e:
             logger.debug("Failed to extract repo limits from request: %s", e)
-            self._repo_max_files = None
-            self._repo_max_bytes = None
+            repo_max_files = None
+            repo_max_bytes = None
 
         # Generate analysis context
-        context = self._build_analysis_context(request)
+        context = self._build_analysis_context(request, repo_max_files, repo_max_bytes)
         logger.info(
             "AIAnalyzer: context built len=%d include_repo=%s cloned_path=%s",
             len(context or ""),
@@ -87,7 +87,9 @@ class AIAnalyzer:
             recommendations=recommendations,
         )
 
-    def _build_analysis_context(self, request: AnalysisRequest) -> str:
+    def _build_analysis_context(
+        self, request: AnalysisRequest, repo_max_files: int | None = None, repo_max_bytes: int | None = None
+    ) -> str:
         """Build context string for AI analysis.
 
         Args:
@@ -109,7 +111,10 @@ class AIAnalyzer:
         if request.include_repository_context:
             if _repo_path := getattr(request, "cloned_repo_path", ""):
                 repo_files = self._extract_relevant_repository_files(
-                    repo_path=Path(_repo_path), failure_text=request.text
+                    repo_path=Path(_repo_path),
+                    failure_text=request.text,
+                    max_files=repo_max_files,
+                    max_file_bytes=repo_max_bytes,
                 )
                 if repo_files:
                     context_parts.append("Repository Source Code Context:")
@@ -370,6 +375,7 @@ class AIAnalyzer:
         system_prompt: str | None = None,
         *,
         repo_context_included: bool = False,
+        max_tokens: int = 8192,
     ) -> list[str]:
         """Generate actionable recommendations."""
         instructions, allowed_paths, allowed_clause = self._build_recommendation_instructions(
@@ -390,6 +396,7 @@ class AIAnalyzer:
             prompt=prompt,
             repo_context_included=repo_context_included,
             response_schema=response_schema,
+            max_tokens=max_tokens,
         )
 
         logger.debug("AIAnalyzer: recommendations raw length=%d", len(raw))
@@ -499,12 +506,13 @@ class AIAnalyzer:
         prompt: str,
         repo_context_included: bool,
         response_schema: Any,
+        max_tokens: int = 8192,
     ) -> str:
         result = self.client.generate_content(
             prompt,
             response_mime_type="application/json",
             temperature=0.1 if repo_context_included else 0.7,
-            max_tokens=8192,
+            max_tokens=max_tokens,
             response_schema=response_schema,
         )
         if not result["success"]:
@@ -729,22 +737,29 @@ class AIAnalyzer:
 
         return "\n".join(formatted)
 
-    def _extract_relevant_repository_files(self, repo_path: Path, failure_text: str) -> list[tuple[str, str]]:
+    def _extract_relevant_repository_files(
+        self, repo_path: Path, failure_text: str, max_files: int | None = None, max_file_bytes: int | None = None
+    ) -> list[tuple[str, str]]:
         """Extract 3-5 most relevant files for AI analysis.
 
         Args:
             repo_path: Path to cloned repository
             failure_text: Text containing failure information
+            max_files: Maximum number of files to extract (default: 5)
+            max_file_bytes: Maximum bytes per file (default: 51200)
 
         Returns:
             List of (file_path, content) tuples
         """
+        # Normalize failure_text to handle non-str inputs robustly
+        if failure_text is None:
+            failure_text = ""
+        elif not isinstance(failure_text, str):
+            failure_text = str(failure_text)
+
         files: list[tuple[str, str]] = []
 
-        # Get limits from analysis request set earlier (via attached attribute on self or instance)
-        # Default to safe limits if not provided by the request
-        max_files = getattr(self, "_repo_max_files", None)
-        max_file_bytes = getattr(self, "_repo_max_bytes", None)
+        # Apply default limits if not provided or invalid
         if not isinstance(max_files, int) or max_files <= 0:
             max_files = 5
         if not isinstance(max_file_bytes, int) or max_file_bytes <= 0:
@@ -876,7 +891,9 @@ class AIAnalyzer:
                 title = ins.title if hasattr(ins, "title") else "Recommendation"
                 category = getattr(ins, "category", "general")
                 severity = getattr(ins, "severity", "MEDIUM")
-                fallback.append(f"Focus: {title} — address {str(category).lower()} ({str(severity).lower()}).")
+                # Use Severity.value when available to avoid strings like 'Severity.MEDIUM'
+                sev = severity.value if hasattr(severity, "value") else str(severity)
+                fallback.append(f"Focus: {title} — address {str(category).lower()} ({sev.lower()}).")
             return fallback
 
         if isinstance(raw, str) and raw.strip():

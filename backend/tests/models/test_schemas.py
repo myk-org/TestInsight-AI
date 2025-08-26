@@ -7,6 +7,7 @@ from backend.models.schemas import (
     ConnectionTestResult,
     GeminiModelInfo,
     GeminiModelsResponse,
+    KeyValidationResponse,
     Severity,
     TestConnectionWithParamsRequest,
 )
@@ -236,3 +237,37 @@ class TestTestConnectionWithParamsRequest:
         )
         assert request.service == "ai"
         assert request.config["gemini_api_key"] == FAKE_GEMINI_API_KEY
+
+
+class TestKeyValidationResponse:
+    """Test KeyValidationResponse model."""
+
+    def test_valid_key_validation_response(self):
+        """Test valid KeyValidationResponse creation."""
+        response = KeyValidationResponse(
+            valid=True,
+            message="API key is valid and connection successful",
+        )
+        assert response.valid is True
+        assert response.message == "API key is valid and connection successful"
+
+    def test_invalid_key_validation_response(self):
+        """Test invalid KeyValidationResponse creation."""
+        response = KeyValidationResponse(
+            valid=False,
+            message="Invalid API key",
+        )
+        assert response.valid is False
+        assert response.message == "Invalid API key"
+
+    def test_key_validation_response_serialization(self):
+        """Test KeyValidationResponse JSON serialization."""
+        response = KeyValidationResponse(
+            valid=True,
+            message="Connection test successful",
+        )
+        json_data = response.model_dump()
+        assert json_data == {
+            "valid": True,
+            "message": "Connection test successful",
+        }

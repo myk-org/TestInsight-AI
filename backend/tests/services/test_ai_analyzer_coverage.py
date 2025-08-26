@@ -3,6 +3,8 @@
 from pathlib import Path
 from unittest.mock import Mock, patch, mock_open
 
+import pytest
+
 from backend.services.ai_analyzer import AIAnalyzer
 from backend.services.gemini_api import GeminiClient
 
@@ -18,8 +20,9 @@ def test_extract_relevant_repository_files():
         mock_file_path.exists.return_value = True
         mock_file_path.is_file.return_value = True
 
-        # Mock the file.open() context manager
-        mock_file_path.open = mock_open(read_data=b"content")
+        # Mock the file.open() context manager correctly
+        mock_open_context = mock_open(read_data=b"content")
+        mock_file_path.open = mock_open_context
 
         # Mock the chained resolve().relative_to() call
         mock_file_path.resolve.return_value.relative_to.return_value = Path("test_file.py")
@@ -27,8 +30,7 @@ def test_extract_relevant_repository_files():
         mock_find.return_value = mock_file_path
 
         files = analyzer._extract_relevant_repository_files(
-            repo_path=Path("/tmp/repo"),
-            failure_text="test_file.py::test_function",
+            repo_path=Path("/tmp/repo"), failure_text="test_file.py::test_function", max_files=5, max_file_bytes=51200
         )
         assert len(files) >= 1
         assert files[0][0] == "test_file.py"
@@ -144,8 +146,5 @@ def test_parse_json_response():
 
     # Test invalid JSON - should raise ValueError
     invalid_json = "not valid json"
-    try:
+    with pytest.raises(ValueError, match="AI returned unparseable JSON content"):
         analyzer._parse_json_response(invalid_json)
-        assert False, "Should have raised ValueError"
-    except ValueError as e:
-        assert "AI returned unparseable JSON content" in str(e)
