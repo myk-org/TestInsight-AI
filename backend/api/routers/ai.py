@@ -39,6 +39,10 @@ ERROR_KEYWORD_MAPPING: dict[int, list[Union[str, re.Pattern[str]]]] = {
         "token expired",
         "missing key",  # Common variant
         "key invalid",  # Common authentication error phrase
+        "access token",  # OAuth/API token variants
+        "bearer token",  # Bearer authentication
+        "authentication error",  # Direct auth error phrase
+        "unauthenticated",  # Common auth failure term
     ],
     403: [  # Permission/access errors
         "permission denied",
@@ -55,6 +59,11 @@ ERROR_KEYWORD_MAPPING: dict[int, list[Union[str, re.Pattern[str]]]] = {
         REGEX_RATE_LIMIT,  # Tightened pattern to avoid false positives on unrelated "rate" words
         "throttle",
         "quota limit",
+        "rate exceeded",  # Common rate limit variant
+        "request limit",  # API request limits
+        "usage limit",  # Usage-based limits
+        "throttled",  # Past tense throttling
+        "rate limiting",  # Explicit rate limiting phrase
     ],
     400: [  # Bad request errors
         "invalid input",
@@ -279,7 +288,7 @@ async def validate_gemini_api_key(
     except TypeError:
         # Handle invalid API key type (same as models endpoint)
         logger.error("TypeError in validate_gemini_api_key - invalid API key type")
-        raise HTTPException(status_code=400, detail="Invalid API key format")
+        raise HTTPException(status_code=400, detail=INVALID_API_KEY_FORMAT)
     except TimeoutError:
         # Map timeouts to 504 Gateway Timeout
         logger.error("Timeout error in validate_gemini_api_key - request exceeded time limit")

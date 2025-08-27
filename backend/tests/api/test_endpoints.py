@@ -15,7 +15,7 @@ from backend.models.schemas import (
     GitHubSettings,
     JenkinsSettings,
 )
-from backend.api.routers.constants import FAILED_VALIDATE_AUTHENTICATION
+from backend.api.routers.constants import FAILED_VALIDATE_AUTHENTICATION, INVALID_API_KEY_FORMAT
 from backend.tests.conftest import (
     FAKE_GEMINI_API_KEY,  # gitleaks:allow
     FAKE_GITHUB_TOKEN,  # gitleaks:allow
@@ -382,7 +382,14 @@ class TestAIModelsEndpoints:
                 FAKE_INVALID_API_KEY,
                 400,
                 None,  # No 'valid' field in error responses
-                "Invalid API key format",
+                INVALID_API_KEY_FORMAT,
+            ),
+            (
+                TimeoutError("Request timeout"),  # TimeoutError for timeout scenarios
+                FAKE_GEMINI_API_KEY,
+                504,
+                None,  # No 'valid' field in error responses
+                "Request timeout",
             ),
         ],
     )
@@ -732,13 +739,13 @@ class TestEndpointValidation:
         # Use a key with valid prefix but wrong length to test length validation
         response = client.post("/api/v1/ai/models", json={"api_key": "AIzaSyShort"})
         assert response.status_code == 400
-        assert "Invalid API key format" in response.json()["detail"]
+        assert INVALID_API_KEY_FORMAT in response.json()["detail"]
 
     def test_gemini_models_invalid_api_key_prefix(self, client):
         """Test Gemini models with invalid API key prefix (format validation)."""
         response = client.post("/api/v1/ai/models", json={"api_key": FAKE_INVALID_FORMAT_KEY})
         assert response.status_code == 400
-        assert "Invalid API key format" in response.json()["detail"]
+        assert INVALID_API_KEY_FORMAT in response.json()["detail"]
         assert "should start with 'AIzaSy'" in response.json()["detail"]
 
     def test_gemini_models_whitespace_validation(self, client):
@@ -761,7 +768,7 @@ class TestEndpointValidation:
             json={"api_key": "  AIzaSyFakeKeyExample1234567890123456789  "},  # gitleaks:allow
         )
         assert response.status_code == 400
-        assert "Failed to validate authentication" in response.json()["detail"]
+        assert FAILED_VALIDATE_AUTHENTICATION in response.json()["detail"]
 
     def test_gemini_models_non_string_api_key(self, client):
         """Test Gemini models with non-string API key."""
@@ -821,16 +828,35 @@ class TestEndpointValidation:
         assert response.status_code == 200
         mock_creators_instance.create_configured_ai_client.assert_called_once_with(api_key=FAKE_GEMINI_API_KEY)
 
-    def test_api_key_precedence_empty_string_body_uses_query(self, client):
+    @patch("backend.api.routers.ai.ServiceClientCreators")
+    def test_api_key_precedence_empty_string_body_uses_query(self, mock_service_creators, client):
         """Test that empty string body API key doesn't override valid query parameter."""
+        # Mock the service creators to make test deterministic
+        mock_creators_instance = Mock()
+        mock_service_creators.return_value = mock_creators_instance
+
+        # Mock AI analyzer and client
+        mock_ai_analyzer = Mock()
+        mock_gemini_client = Mock()
+        mock_creators_instance.create_configured_ai_client.return_value = mock_ai_analyzer
+        mock_ai_analyzer.client = mock_gemini_client
+
+        mock_response = GeminiModelsResponse(
+            success=True,
+            models=[],
+            total_count=0,
+            message="Success",
+            error_details=None,
+        )
+        mock_gemini_client.get_available_models.return_value = mock_response
+
         response = client.post(
             f"/api/v1/ai/models?api_key={FAKE_GEMINI_API_KEY}",  # Valid query parameter
             json={"api_key": ""},  # Empty body should not override
         )
-        # Should use query parameter and not get a format validation error for empty string
-        if response.status_code == 400:
-            assert "Invalid API key format" not in response.json().get("detail", "")
-        # Otherwise, should succeed with query parameter
+        # Should use query parameter and succeed deterministically
+        assert response.status_code == 200
+        mock_creators_instance.create_configured_ai_client.assert_called_once_with(api_key=FAKE_GEMINI_API_KEY)
 
     def test_settings_update_invalid_data(self, client):
         """Test settings update with invalid data."""
