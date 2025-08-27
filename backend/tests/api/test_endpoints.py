@@ -390,8 +390,8 @@ class TestAIModelsEndpoints:
 
         response = client.post("/api/v1/ai/models?api_key=" + FAKE_INVALID_API_KEY)
 
-        assert response.status_code == 401
-        assert "Invalid API key" in response.json()["detail"]
+        assert response.status_code == 401  # "Invalid API key" correctly classified as 401
+        assert "Authentication failed. Please verify your API key." == response.json()["detail"]
 
     @patch("backend.api.routers.ai.ServiceClientCreators")
     def test_get_gemini_models_quota_exceeded(self, mock_service_client_creators, client):
@@ -450,8 +450,8 @@ class TestAIModelsEndpoints:
 
         response = client.post("/api/v1/ai/models/validate-key?api_key=" + FAKE_INVALID_API_KEY)
 
-        assert response.status_code == 401
-        assert "Invalid API key" in response.json()["detail"]
+        assert response.status_code == 503  # ConnectionError now maps to 503
+        assert "Service unavailable" in response.json()["detail"]
 
     def test_validate_key_precedence_non_string_body_validation(self, client):
         """Test that non-string body API key is properly rejected by FastAPI validation in validate-key."""

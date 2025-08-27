@@ -1,6 +1,7 @@
 """AI models endpoints for TestInsight AI."""
 
 import logging
+import re
 
 from fastapi import APIRouter, HTTPException, Body
 
@@ -16,13 +17,16 @@ logger = logging.getLogger(__name__)
 ERROR_KEYWORD_MAPPING = {
     401: [  # Authentication errors
         "invalid api key",
+        "invalid-api-key",  # Hyphenated variant
         "authentication failed",
         "unauthorized",
         "api key",
+        "api-key",  # Hyphenated variant
         r"\bauth\b",  # Word boundary matching for single word
         "credential",
         "invalid token",
         "token expired",
+        "missing key",  # Common variant
     ],
     403: [  # Permission/access errors
         "permission denied",
@@ -62,6 +66,16 @@ ERROR_KEYWORD_MAPPING = {
     ],
 }
 
+# Generic error messages for classified upstream errors to avoid leaking details
+GENERIC_ERROR_MESSAGES = {
+    401: "Authentication failed. Please verify your API key.",
+    403: "Access denied. Please check your permissions.",
+    429: "Rate limit exceeded. Please try again later.",
+    400: "Invalid request. Please check your input.",
+    503: "Service temporarily unavailable. Please try again later.",
+    504: "Request timeout. Please try again later.",
+}
+
 
 def classify_error_status_code(error_message: str) -> int | None:
     """Classify error message to appropriate HTTP status code.
@@ -84,8 +98,6 @@ def classify_error_status_code(error_message: str) -> int | None:
         for keyword in keywords:
             # Handle regex patterns for word boundary matching
             if keyword.startswith(r"\b") and keyword.endswith(r"\b"):
-                import re
-
                 if re.search(keyword, error_lower):
                     return status_code
             # Handle regular substring matching
@@ -176,16 +188,17 @@ async def get_gemini_models(
         if not response.success:
             # Combine message and error_details for comprehensive error checking
             combined_error = f"{response.message or ''} {response.error_details or ''}".lower().strip()
-            error_detail = response.error_details or response.message or "Unknown error"
 
             if combined_error:
                 # Classify error using helper function
                 status_code = classify_error_status_code(combined_error)
                 if status_code:
-                    raise HTTPException(status_code=status_code, detail=error_detail)
+                    # Use generic message for classified errors to avoid leaking details
+                    generic_detail = GENERIC_ERROR_MESSAGES.get(status_code, "An error occurred")
+                    raise HTTPException(status_code=status_code, detail=generic_detail)
 
             # Unknown upstream failures - use 502 Bad Gateway instead of 500
-            raise HTTPException(status_code=502, detail=error_detail)
+            raise HTTPException(status_code=502, detail="Bad gateway - upstream service error")
 
         return response
 
@@ -195,12 +208,17 @@ async def get_gemini_models(
     except ValueError as e:
         # Handle ServiceConfig validation errors (no API key configured)
         raise HTTPException(status_code=400, detail=str(e))
-    except ConnectionError as e:
-        # Handle connection-related errors (invalid API key, network issues)
-        raise HTTPException(status_code=401, detail=str(e))
-    except Exception as e:
+    except TimeoutError:
+        # Map timeouts to 504 Gateway Timeout
+        logger.error("Timeout error in get_gemini_models - request exceeded time limit")
+        raise HTTPException(status_code=504, detail="Request timeout")
+    except ConnectionError:
+        # Map generic connection issues to 503 Service Unavailable
+        logger.error("Connection error in get_gemini_models - service connectivity issue")
+        raise HTTPException(status_code=503, detail="Service unavailable")
+    except Exception:
         # Handle any unexpected errors - log details but return generic message
-        logger.error("Unexpected error in get_gemini_models: %s", type(e).__name__, exc_info=True)
+        logger.error("Unexpected error in get_gemini_models - unhandled exception occurred", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error occurred while fetching models")
 
 
@@ -235,10 +253,15 @@ async def validate_gemini_api_key(
     except ValueError as e:
         # Handle ServiceConfig validation errors (no API key configured)
         raise HTTPException(status_code=400, detail=str(e))
-    except ConnectionError as e:
-        # Handle connection-related errors (invalid API key, network issues)
-        raise HTTPException(status_code=401, detail=str(e))
-    except Exception as e:
+    except TimeoutError:
+        # Map timeouts to 504 Gateway Timeout
+        logger.error("Timeout error in validate_gemini_api_key - request exceeded time limit")
+        raise HTTPException(status_code=504, detail="Request timeout")
+    except ConnectionError:
+        # Map generic connection issues to 503 Service Unavailable
+        logger.error("Connection error in validate_gemini_api_key - service connectivity issue")
+        raise HTTPException(status_code=503, detail="Service unavailable")
+    except Exception:
         # Handle any unexpected errors - log details but return generic message
-        logger.error("Unexpected error in validate_gemini_api_key: %s", type(e).__name__, exc_info=True)
+        logger.error("Unexpected error in validate_gemini_api_key - unhandled exception occurred", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error occurred during API key validation")
