@@ -40,6 +40,8 @@ ERROR_KEYWORD_MAPPING: dict[int, list[Union[str, re.Pattern[str]]]] = {
         "invalid-api-key",  # Hyphenated variant
         "authentication failed",
         "unauthorized",
+        "api key",  # Generic but commonly used in error contexts
+        "api-key",  # Hyphenated variant
         "api key invalid",
         "api key not found",
         "api key missing",
