@@ -9,7 +9,11 @@ from fastapi import APIRouter, HTTPException, Body
 from backend.models.schemas import GeminiModelsResponse, AIRequest, KeyValidationResponse
 from backend.services.service_config.client_creators import ServiceClientCreators
 from backend.services.security_utils import SettingsValidator
-from backend.api.routers.constants import INVALID_API_KEY_FORMAT, FAILED_VALIDATE_AUTHENTICATION
+from backend.api.routers.constants import (
+    INVALID_API_KEY_FORMAT,
+    FAILED_VALIDATE_AUTHENTICATION,
+    INTERNAL_SERVER_ERROR_FETCHING_MODELS,
+)
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 logger = logging.getLogger(__name__)
@@ -251,7 +255,7 @@ async def get_gemini_models(
     except Exception:
         # Handle any unexpected errors - log details but return generic message
         logger.error("Unexpected error in get_gemini_models - unhandled exception occurred", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error occurred while fetching models")
+        raise HTTPException(status_code=500, detail=INTERNAL_SERVER_ERROR_FETCHING_MODELS)
 
 
 @router.post("/models/validate-key", response_model=KeyValidationResponse)

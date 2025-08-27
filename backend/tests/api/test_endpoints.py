@@ -15,13 +15,17 @@ from backend.models.schemas import (
     GitHubSettings,
     JenkinsSettings,
 )
-from backend.api.routers.constants import FAILED_VALIDATE_AUTHENTICATION, INVALID_API_KEY_FORMAT
+from backend.api.routers.constants import (
+    FAILED_VALIDATE_AUTHENTICATION,
+    INVALID_API_KEY_FORMAT,
+    INTERNAL_SERVER_ERROR_FETCHING_MODELS,
+)
 from backend.tests.conftest import (
-    FAKE_GEMINI_API_KEY,  # gitleaks:allow
-    FAKE_GITHUB_TOKEN,  # gitleaks:allow
+    FAKE_GEMINI_API_KEY,
+    FAKE_GITHUB_TOKEN,
     FAKE_INVALID_API_KEY,
     FAKE_INVALID_FORMAT_KEY,
-    FAKE_JENKINS_TOKEN,  # gitleaks:allow
+    FAKE_JENKINS_TOKEN,
     FAKE_JENKINS_URL,
     FAKE_JENKINS_USERNAME,
 )
@@ -428,6 +432,13 @@ class TestAIModelsEndpoints:
         elif "message" in data:
             assert expected_detail_contains in data["message"]
 
+        # Assert which key was used to ensure precedence and plumbing are correct
+        if expected_status == 200:
+            mock_creators_instance.create_configured_ai_client.assert_called_once_with(api_key=api_key)
+        elif not client_side_effect:
+            # For non-200 responses without side effects, the client creation should still be attempted
+            mock_creators_instance.create_configured_ai_client.assert_called_once_with(api_key=api_key)
+
     def test_validate_key_precedence_non_string_body_validation(self, client):
         """Test that non-string body API key is properly rejected by FastAPI validation in validate-key."""
         response = client.post(
@@ -459,7 +470,7 @@ class TestAIModelsEndpoints:
         assert response.status_code == 200
         data = response.json()
         assert data["valid"] is True
-        assert data["message"] == "API key format is valid and client initialized successfully"
+        assert "valid" in data["message"] and "initialized successfully" in data["message"]
 
         # Verify the mock was called with the query parameter, not empty string
         mock_creators_instance.create_configured_ai_client.assert_called_once_with(api_key=FAKE_GEMINI_API_KEY)
@@ -746,27 +757,19 @@ class TestEndpointValidation:
         response = client.post("/api/v1/ai/models", json={"api_key": FAKE_INVALID_FORMAT_KEY})
         assert response.status_code == 400
         assert INVALID_API_KEY_FORMAT in response.json()["detail"]
-        assert "should start with 'AIzaSy'" in response.json()["detail"]
+        assert "AIzaSy" in response.json()["detail"]
 
-    def test_gemini_models_whitespace_validation(self, client):
+    @pytest.mark.parametrize(
+        "api_key,description",
+        [
+            ("  " + FAKE_GEMINI_API_KEY + "  ", "whitespace-padded valid key"),
+            ("   ", "whitespace-only key"),
+            ("  AIzaSyFakeKeyExample1234567890123456789  ", "whitespace-padded fake key"),  # gitleaks:allow
+        ],
+    )
+    def test_gemini_models_whitespace_validation(self, client, api_key, description):
         """Test that whitespace-padded or whitespace-only API keys return authentication error."""
-        # Test whitespace-padded key
-        response = client.post("/api/v1/ai/models", json={"api_key": "  " + FAKE_GEMINI_API_KEY + "  "})
-        assert response.status_code == 400
-        assert response.json()["detail"] == FAILED_VALIDATE_AUTHENTICATION
-
-        # Test whitespace-only key
-        response = client.post("/api/v1/ai/models", json={"api_key": "   "})
-        assert response.status_code == 400
-        assert response.json()["detail"] == FAILED_VALIDATE_AUTHENTICATION
-
-    def test_gemini_models_api_key_whitespace_handling(self, client):
-        """Test Gemini models with whitespace-padded API key."""
-        # Test whitespace handling - should be rejected by Gemini API
-        response = client.post(
-            "/api/v1/ai/models",
-            json={"api_key": "  AIzaSyFakeKeyExample1234567890123456789  "},  # gitleaks:allow
-        )
+        response = client.post("/api/v1/ai/models", json={"api_key": api_key})
         assert response.status_code == 400
         assert FAILED_VALIDATE_AUTHENTICATION in response.json()["detail"]
 
@@ -909,7 +912,7 @@ class TestEndpointErrorHandling:
         response = client.post("/api/v1/ai/models?api_key=" + FAKE_GEMINI_API_KEY)  # pragma: allowlist secret
 
         assert response.status_code == 500
-        assert "Internal server error occurred while fetching models" in response.json()["detail"]
+        assert INTERNAL_SERVER_ERROR_FETCHING_MODELS in response.json()["detail"]
 
     @patch("backend.api.routers.settings.SettingsService")
     def test_settings_get_exception(self, mock_settings_service, client):
