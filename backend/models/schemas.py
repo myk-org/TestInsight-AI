@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictStr
 
 
 class Severity(str, Enum):
@@ -135,7 +135,7 @@ class AIRequest(BaseModel):
 
     model_config = {"extra": "forbid"}
 
-    api_key: str | None = Field(None, description="Optional API key to override configured key")
+    api_key: StrictStr | None = Field(None, description="Optional API key to override configured key")
 
 
 class KeyValidationResponse(BaseModel):

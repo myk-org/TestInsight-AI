@@ -6,6 +6,8 @@ from io import BytesIO
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import pytest
+
 from backend.models.schemas import (
     AppSettings,
     GeminiModelInfo,
@@ -364,9 +366,37 @@ class TestAIModelsEndpoints:
         assert data["success"] is True
         assert len(data["models"]) == 1
 
+    @pytest.mark.parametrize(
+        "error_message,error_details,api_key,expected_status,expected_detail_contains",
+        [
+            (
+                "Authentication failed",
+                "Invalid API key",
+                FAKE_INVALID_API_KEY,
+                401,
+                "Authentication failed. Please verify your API key.",
+            ),
+            (
+                "quota exceeded",
+                "Rate limit exceeded",
+                FAKE_GEMINI_API_KEY,
+                429,
+                "Rate limit exceeded",
+            ),
+        ],
+    )
     @patch("backend.api.routers.ai.ServiceClientCreators")
-    def test_get_gemini_models_invalid_api_key(self, mock_service_client_creators, client):
-        """Test Gemini models retrieval with invalid API key."""
+    def test_get_gemini_models_error_scenarios(
+        self,
+        mock_service_client_creators,
+        client,
+        error_message,
+        error_details,
+        api_key,
+        expected_status,
+        expected_detail_contains,
+    ):
+        """Test Gemini models retrieval error scenarios."""
         # Mock the ServiceClientCreators instance
         mock_creators_instance = Mock()
         mock_service_client_creators.return_value = mock_creators_instance
@@ -383,75 +413,69 @@ class TestAIModelsEndpoints:
             success=False,
             models=[],
             total_count=0,
-            message="Authentication failed",
-            error_details="Invalid API key",
+            message=error_message,
+            error_details=error_details,
         )
         mock_gemini_client.get_available_models.return_value = mock_response
 
-        response = client.post("/api/v1/ai/models?api_key=" + FAKE_INVALID_API_KEY)
+        response = client.post(f"/api/v1/ai/models?api_key={api_key}")
 
-        assert response.status_code == 401  # "Invalid API key" correctly classified as 401
-        assert "Authentication failed. Please verify your API key." == response.json()["detail"]
+        assert response.status_code == expected_status
+        assert expected_detail_contains in response.json()["detail"]
 
+    @pytest.mark.parametrize(
+        "client_side_effect,api_key,expected_status,expected_valid,expected_detail_contains",
+        [
+            (
+                None,  # No exception - successful client creation
+                FAKE_GEMINI_API_KEY,
+                200,
+                True,
+                "API key is valid",
+            ),
+            (
+                ConnectionError("Invalid API key"),  # ConnectionError means invalid key
+                FAKE_INVALID_API_KEY,
+                503,
+                None,  # No 'valid' field in error responses
+                "Service unavailable",
+            ),
+        ],
+    )
     @patch("backend.api.routers.ai.ServiceClientCreators")
-    def test_get_gemini_models_quota_exceeded(self, mock_service_client_creators, client):
-        """Test Gemini models retrieval with quota exceeded."""
-        # Mock the ServiceClientCreators instance
+    def test_validate_gemini_api_key_scenarios(
+        self,
+        mock_service_client_creators,
+        client,
+        client_side_effect,
+        api_key,
+        expected_status,
+        expected_valid,
+        expected_detail_contains,
+    ):
+        """Test API key validation scenarios."""
         mock_creators_instance = Mock()
         mock_service_client_creators.return_value = mock_creators_instance
 
-        # Mock the AI analyzer returned by create_configured_ai_client
-        mock_ai_analyzer = Mock()
-        mock_creators_instance.create_configured_ai_client.return_value = mock_ai_analyzer
+        if client_side_effect:
+            mock_creators_instance.create_configured_ai_client.side_effect = client_side_effect
+        else:
+            # Mock successful client creation
+            mock_ai_analyzer = Mock()
+            mock_creators_instance.create_configured_ai_client.return_value = mock_ai_analyzer
 
-        # Mock the underlying GeminiClient and its response
-        mock_gemini_client = Mock()
-        mock_ai_analyzer.client = mock_gemini_client
+        response = client.post(f"/api/v1/ai/models/validate-key?api_key={api_key}")
 
-        mock_response = GeminiModelsResponse(
-            success=False,
-            models=[],
-            total_count=0,
-            message="quota exceeded",
-            error_details="Rate limit exceeded",
-        )
-        mock_gemini_client.get_available_models.return_value = mock_response
-
-        response = client.post("/api/v1/ai/models?api_key=" + FAKE_GEMINI_API_KEY)  # pragma: allowlist secret
-
-        assert response.status_code == 429
-        assert "Rate limit exceeded" in response.json()["detail"]
-
-    @patch("backend.api.routers.ai.ServiceClientCreators")
-    def test_validate_gemini_api_key_success(self, mock_service_client_creators, client):
-        """Test successful API key validation."""
-        mock_creators_instance = Mock()
-        mock_service_client_creators.return_value = mock_creators_instance
-        # Mock successful client creation (no exception means valid key)
-        mock_ai_analyzer = Mock()
-        mock_creators_instance.create_configured_ai_client.return_value = mock_ai_analyzer
-
-        response = client.post(
-            "/api/v1/ai/models/validate-key?api_key=" + FAKE_GEMINI_API_KEY
-        )  # pragma: allowlist secret
-
-        assert response.status_code == 200
+        assert response.status_code == expected_status
         data = response.json()
-        assert data["valid"] is True
-        assert "API key is valid" in data["message"]
 
-    @patch("backend.api.routers.ai.ServiceClientCreators")
-    def test_validate_gemini_api_key_invalid(self, mock_service_client_creators, client):
-        """Test API key validation with invalid key."""
-        mock_creators_instance = Mock()
-        mock_service_client_creators.return_value = mock_creators_instance
-        # Mock failed client creation (ConnectionError means invalid key)
-        mock_creators_instance.create_configured_ai_client.side_effect = ConnectionError("Invalid API key")
+        if expected_valid is not None:
+            assert data["valid"] is expected_valid
 
-        response = client.post("/api/v1/ai/models/validate-key?api_key=" + FAKE_INVALID_API_KEY)
-
-        assert response.status_code == 503  # ConnectionError now maps to 503
-        assert "Service unavailable" in response.json()["detail"]
+        if "detail" in data:
+            assert expected_detail_contains in data["detail"]
+        elif "message" in data:
+            assert expected_detail_contains in data["message"]
 
     def test_validate_key_precedence_non_string_body_validation(self, client):
         """Test that non-string body API key is properly rejected by FastAPI validation in validate-key."""
@@ -766,7 +790,9 @@ class TestEndpointValidation:
     def test_gemini_models_api_key_whitespace_handling(self, client):
         """Test Gemini models with whitespace-padded API key."""
         # Test whitespace handling - should be rejected by Gemini API
-        response = client.post("/api/v1/ai/models", json={"api_key": "  AIzaSyFakeKeyExample1234567890123456789  "})
+        response = client.post(
+            "/api/v1/ai/models", json={"api_key": "  AIzaSyFakeKeyExample1234567890123456789  "}
+        )  # gitleaks:allow
         assert response.status_code == 400
         assert "Failed to validate authentication" in response.json()["detail"]
 

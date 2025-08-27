@@ -21,13 +21,11 @@ def test_extract_relevant_repository_files():
         mock_file_path.exists.return_value = True
         mock_file_path.is_file.return_value = True
 
-        # Mock the file.open() context manager with BytesIO for binary operations
-        def mock_open_binary(*args, **kwargs):
-            if "rb" in args or (kwargs.get("mode") and "b" in kwargs["mode"]):
-                return BytesIO(b"content")
-            return BytesIO(b"content")
-
-        mock_file_path.open = mock_open_binary
+        # Mock the file.open() context manager with explicit context manager behavior
+        mock_context_manager = Mock()
+        mock_context_manager.__enter__ = Mock(return_value=BytesIO(b"content"))
+        mock_context_manager.__exit__ = Mock(return_value=None)
+        mock_file_path.open = Mock(return_value=mock_context_manager)
 
         # Mock the chained resolve().relative_to() call
         mock_file_path.resolve.return_value.relative_to.return_value = Path("test_file.py")
@@ -315,3 +313,107 @@ def test_parse_json_response():
     invalid_json = "not valid json"
     with pytest.raises(ValueError, match="AI returned unparseable JSON content"):
         analyzer._parse_json_response(invalid_json)
+
+
+def test_parse_json_response_embedded_array_extraction():
+    """Test _parse_json_response with JSON array embedded in prose."""
+    mock_client = Mock(spec=GeminiClient)
+    analyzer = AIAnalyzer(client=mock_client)
+
+    # Test JSON array embedded in prose text
+    embedded_content = """Here are the analysis results:
+
+    [
+        {"title": "Memory Leak", "severity": "high", "category": "performance"},
+        {"title": "SQL Injection", "severity": "critical", "category": "security"}
+    ]
+
+    That concludes the analysis."""
+
+    result = analyzer._parse_json_response(embedded_content)
+    assert len(result) == 2
+    assert result[0]["title"] == "Memory Leak"
+    assert result[0]["severity"] == "high"
+    assert result[1]["title"] == "SQL Injection"
+    assert result[1]["severity"] == "critical"
+
+
+def test_parse_json_response_individual_objects_extraction():
+    """Test _parse_json_response with individual JSON objects extraction."""
+    mock_client = Mock(spec=GeminiClient)
+    analyzer = AIAnalyzer(client=mock_client)
+
+    # Test content with individual JSON objects (no array structure)
+    objects_content = """Analysis found these issues:
+
+    {"title": "Buffer Overflow", "severity": "critical", "line": 42}
+
+    Additionally:
+
+    {"title": "Deprecated API", "severity": "medium", "function": "old_method"}
+
+    End of analysis."""
+
+    result = analyzer._parse_json_response(objects_content)
+    assert len(result) == 2
+    assert result[0]["title"] == "Buffer Overflow"
+    assert result[0]["severity"] == "critical"
+    assert result[0]["line"] == 42
+    assert result[1]["title"] == "Deprecated API"
+    assert result[1]["severity"] == "medium"
+
+
+def test_extract_json_array_edge_cases():
+    """Test _extract_json_array method edge cases."""
+    mock_client = Mock(spec=GeminiClient)
+    analyzer = AIAnalyzer(client=mock_client)
+
+    # Test no brackets
+    result = analyzer._extract_json_array("no brackets here")
+    assert result is None
+
+    # Test malformed brackets
+    result = analyzer._extract_json_array("[ invalid json content ]")
+    assert result is None
+
+    # Test nested arrays
+    nested_content = """The results: [
+        {"data": [1, 2, 3], "title": "Nested Array"},
+        {"data": [4, 5, 6], "title": "Another Nested"}
+    ] end"""
+
+    result = analyzer._extract_json_array(nested_content)
+    assert len(result) == 2
+    assert result[0]["data"] == [1, 2, 3]
+    assert result[1]["title"] == "Another Nested"
+
+    # Test multiple array-like structures (should fail due to invalid combined extraction)
+    multiple_arrays = """First: [{"id": 1}] Second: [{"id": 2}]"""
+    result = analyzer._extract_json_array(multiple_arrays)
+    assert result is None  # Invalid combined JSON from first [ to last ]
+
+
+def test_extract_json_objects_edge_cases():
+    """Test _extract_json_objects method edge cases."""
+    mock_client = Mock(spec=GeminiClient)
+    analyzer = AIAnalyzer(client=mock_client)
+
+    # Test no objects
+    result = analyzer._extract_json_objects("no objects here")
+    assert result == []
+
+    # Test malformed objects
+    result = analyzer._extract_json_objects("{ invalid json }")
+    assert result == []
+
+    # Test nested objects
+    nested_content = """Found: {"outer": {"inner": "value"}, "title": "Nested"} and {"simple": "object"}"""
+    result = analyzer._extract_json_objects(nested_content)
+    assert len(result) == 2
+    assert result[0]["outer"]["inner"] == "value"
+    assert result[1]["simple"] == "object"
+
+    # Test incomplete objects (unmatched braces)
+    incomplete_content = """{ "incomplete": "object" and more text"""
+    result = analyzer._extract_json_objects(incomplete_content)
+    assert result == []  # Should not extract incomplete objects

@@ -2,6 +2,7 @@
 
 import logging
 import re
+from typing import Pattern, Union
 
 from fastapi import APIRouter, HTTPException, Body
 
@@ -12,9 +13,15 @@ from backend.services.security_utils import SettingsValidator
 router = APIRouter(prefix="/ai", tags=["ai"])
 logger = logging.getLogger(__name__)
 
+# Precompiled regex patterns for performance
+REGEX_AUTH = re.compile(r"\bauth\b")
+REGEX_QUOTA = re.compile(r"\bquota\b")
+REGEX_RATE = re.compile(r"\brate\b")
+
 # Error keyword mapping for API error status code classification
 # Order matters: more specific errors should come first
-ERROR_KEYWORD_MAPPING = {
+# Mix of literal strings and precompiled Pattern objects for clarity and performance
+ERROR_KEYWORD_MAPPING: dict[int, list[Union[str, Pattern[str]]]] = {
     401: [  # Authentication errors
         "invalid api key",
         "invalid-api-key",  # Hyphenated variant
@@ -22,11 +29,13 @@ ERROR_KEYWORD_MAPPING = {
         "unauthorized",
         "api key",
         "api-key",  # Hyphenated variant
-        r"\bauth\b",  # Word boundary matching for single word
+        REGEX_AUTH,  # Precompiled pattern for word boundary matching
         "credential",
+        "invalid credentials",  # Common authentication error phrase
         "invalid token",
         "token expired",
         "missing key",  # Common variant
+        "key invalid",  # Common authentication error phrase
     ],
     403: [  # Permission/access errors
         "permission denied",
@@ -39,8 +48,8 @@ ERROR_KEYWORD_MAPPING = {
         "quota exceeded",
         "rate limit",
         "too many requests",
-        r"\bquota\b",  # Word boundary matching for single word
-        r"\brate\b",  # Word boundary matching for single word
+        REGEX_QUOTA,  # Precompiled pattern for word boundary matching
+        REGEX_RATE,  # Precompiled pattern for word boundary matching
         "throttle",
         "quota limit",
     ],
@@ -96,12 +105,12 @@ def classify_error_status_code(error_message: str) -> int | None:
     # Find the first matching status code using module constant
     for status_code, keywords in ERROR_KEYWORD_MAPPING.items():
         for keyword in keywords:
-            # Handle regex patterns for word boundary matching
-            if keyword.startswith(r"\b") and keyword.endswith(r"\b"):
-                if re.search(keyword, error_lower):
+            # Handle precompiled Pattern objects
+            if isinstance(keyword, Pattern):
+                if keyword.search(error_lower):
                     return status_code
-            # Handle regular substring matching
-            elif keyword in error_lower:
+            # Handle regular substring matching for string literals
+            elif isinstance(keyword, str) and keyword in error_lower:
                 return status_code
 
     return None

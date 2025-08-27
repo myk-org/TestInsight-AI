@@ -1,5 +1,7 @@
 """Comprehensive tests for AI router error mapping and classification functionality."""
 
+from typing import Pattern
+
 from backend.api.routers.ai import ERROR_KEYWORD_MAPPING, classify_error_status_code
 
 
@@ -16,13 +18,15 @@ class TestErrorKeywordMapping:
             assert isinstance(status_code, int)
             assert 400 <= status_code <= 599  # Valid HTTP error status codes
 
-        # Verify all values are non-empty lists of strings
+        # Verify all values are non-empty lists of strings or Pattern objects
         for keywords in ERROR_KEYWORD_MAPPING.values():
             assert isinstance(keywords, list)
             assert len(keywords) > 0
             for keyword in keywords:
-                assert isinstance(keyword, str)
-                assert len(keyword.strip()) > 0
+                # Keywords can be either strings or compiled regex Pattern objects
+                assert isinstance(keyword, (str, Pattern))
+                if isinstance(keyword, str):
+                    assert len(keyword.strip()) > 0
 
     def test_error_keyword_mapping_completeness(self):
         """Test that ERROR_KEYWORD_MAPPING covers all expected error categories."""
@@ -38,18 +42,26 @@ class TestErrorKeywordMapping:
         """Test that 401 status code includes authentication-related keywords."""
         auth_keywords = ERROR_KEYWORD_MAPPING[401]
 
-        # Check for critical authentication keywords
-        expected_keywords = {
+        # Check for critical authentication keywords (strings only)
+        expected_string_keywords = {
             "invalid api key",
             "authentication failed",
             "unauthorized",
             "api key",
-            r"\bauth\b",  # Word boundary regex pattern
             "credential",
         }
 
-        actual_keywords = set(auth_keywords)
-        assert expected_keywords.issubset(actual_keywords)
+        # Extract string keywords from the list (excluding Pattern objects)
+        actual_string_keywords = {kw for kw in auth_keywords if isinstance(kw, str)}
+        assert expected_string_keywords.issubset(actual_string_keywords)
+
+        # Check that regex patterns are present (Pattern objects)
+        regex_patterns = [kw for kw in auth_keywords if isinstance(kw, Pattern)]
+        assert len(regex_patterns) > 0, "Should have at least one regex pattern for auth keywords"
+
+        # Verify specific auth regex pattern exists
+        auth_pattern_found = any(isinstance(kw, Pattern) and kw.pattern == r"\bauth\b" for kw in auth_keywords)
+        assert auth_pattern_found, "Should have auth word boundary regex pattern"
 
     def test_error_keyword_mapping_403_permission_keywords(self):
         """Test that 403 status code includes permission-related keywords."""
@@ -64,10 +76,22 @@ class TestErrorKeywordMapping:
         """Test that 429 status code includes rate limiting keywords."""
         rate_limit_keywords = ERROR_KEYWORD_MAPPING[429]
 
-        expected_keywords = {"quota exceeded", "rate limit", "too many requests", r"\bquota\b", r"\brate\b"}
+        # Check for critical rate limiting keywords (strings only)
+        expected_string_keywords = {"quota exceeded", "rate limit", "too many requests"}
 
-        actual_keywords = set(rate_limit_keywords)
-        assert expected_keywords.issubset(actual_keywords)
+        # Extract string keywords from the list (excluding Pattern objects)
+        actual_string_keywords = {kw for kw in rate_limit_keywords if isinstance(kw, str)}
+        assert expected_string_keywords.issubset(actual_string_keywords)
+
+        # Check that regex patterns are present (Pattern objects)
+        regex_patterns = [kw for kw in rate_limit_keywords if isinstance(kw, Pattern)]
+        assert len(regex_patterns) > 0, "Should have at least one regex pattern for rate limit keywords"
+
+        # Verify specific regex patterns exist
+        quota_pattern_found = any(isinstance(kw, Pattern) and kw.pattern == r"\bquota\b" for kw in rate_limit_keywords)
+        rate_pattern_found = any(isinstance(kw, Pattern) and kw.pattern == r"\brate\b" for kw in rate_limit_keywords)
+        assert quota_pattern_found, "Should have quota word boundary regex pattern"
+        assert rate_pattern_found, "Should have rate word boundary regex pattern"
 
     def test_error_keyword_mapping_400_bad_request_keywords(self):
         """Test that 400 status code includes bad request keywords."""
@@ -101,23 +125,36 @@ class TestErrorKeywordMapping:
         all_keywords = []
 
         for keywords in ERROR_KEYWORD_MAPPING.values():
-            all_keywords.extend(keywords)
+            # Convert Pattern objects to their string representation for comparison
+            processed_keywords = []
+            for kw in keywords:
+                if isinstance(kw, Pattern):
+                    processed_keywords.append(kw.pattern)  # Use pattern string for comparison
+                else:
+                    processed_keywords.append(kw)
+            all_keywords.extend(processed_keywords)
 
         # Check for duplicates
         unique_keywords = set(all_keywords)
         assert len(all_keywords) == len(unique_keywords), "Found duplicate keywords across categories"
 
     def test_keywords_are_lowercase(self):
-        """Test that all keywords are in lowercase for consistent matching."""
+        """Test that all string keywords are in lowercase for consistent matching."""
         for keywords in ERROR_KEYWORD_MAPPING.values():
             for keyword in keywords:
-                assert keyword == keyword.lower(), f"Keyword '{keyword}' should be lowercase"
+                # Only check string keywords, skip Pattern objects
+                if isinstance(keyword, str):
+                    assert keyword == keyword.lower(), f"Keyword '{keyword}' should be lowercase"
+                # Pattern objects are compiled, so we don't need to check case
 
     def test_keywords_are_stripped(self):
-        """Test that all keywords are properly stripped of whitespace."""
+        """Test that all string keywords are properly stripped of whitespace."""
         for keywords in ERROR_KEYWORD_MAPPING.values():
             for keyword in keywords:
-                assert keyword == keyword.strip(), f"Keyword '{keyword}' should be stripped"
+                # Only check string keywords, skip Pattern objects
+                if isinstance(keyword, str):
+                    assert keyword == keyword.strip(), f"Keyword '{keyword}' should be stripped"
+                # Pattern objects don't have leading/trailing whitespace in their patterns
 
 
 class TestClassifyErrorStatusCode:
