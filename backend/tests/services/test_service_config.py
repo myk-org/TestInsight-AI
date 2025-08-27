@@ -36,7 +36,7 @@ class TestServiceConfig:
             ),
             github=GitHubSettings(token="fake_github_token_xyz"),  # pragma: allowlist secret
             ai=AISettings(
-                gemini_api_key="AIzaSyFakeKeyExample123456789",  # pragma: allowlist secret
+                gemini_api_key=FAKE_GEMINI_API_KEY,  # Use constant from conftest
                 model="gemini-1.5-pro",
                 temperature=0.7,
                 max_tokens=4096,

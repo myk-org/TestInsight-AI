@@ -1,7 +1,11 @@
 """Tests for Pydantic models and schemas."""
 
+import pytest
+from pydantic import ValidationError
+
 from backend.models.schemas import (
     AIInsight,
+    AIRequest,
     AnalysisRequest,
     AnalysisResponse,
     ConnectionTestResult,
@@ -271,3 +275,102 @@ class TestKeyValidationResponse:
             "valid": True,
             "message": "Connection test successful",
         }
+
+    def test_key_validation_response_forbids_extra_fields(self):
+        """Test KeyValidationResponse forbids extra fields to catch client typos."""
+        with pytest.raises(ValidationError) as exc_info:
+            KeyValidationResponse(
+                valid=True,
+                message="Connection successful",
+                extra_typo_field="this should be rejected",  # Typo should be caught
+            )
+
+        error = exc_info.value.errors()[0]
+        assert error["type"] == "extra_forbidden"
+        assert "extra_typo_field" in error["loc"]
+
+    def test_key_validation_response_forbids_misspelled_fields(self):
+        """Test KeyValidationResponse catches common field misspellings."""
+        # Test misspelled 'valid' field
+        with pytest.raises(ValidationError) as exc_info:
+            KeyValidationResponse(
+                valide=True,  # Common typo
+                message="Connection successful",
+            )
+
+        errors = exc_info.value.errors()
+        # Should have both missing required field and extra forbidden field errors
+        error_types = {error["type"] for error in errors}
+        assert "missing" in error_types or "extra_forbidden" in error_types
+
+        # Test misspelled 'message' field
+        with pytest.raises(ValidationError) as exc_info:
+            KeyValidationResponse(
+                valid=True,
+                mesage="Connection successful",  # Common typo
+            )
+
+        errors = exc_info.value.errors()
+        error_types = {error["type"] for error in errors}
+        assert "missing" in error_types or "extra_forbidden" in error_types
+
+
+class TestAIRequest:
+    """Test AIRequest model."""
+
+    def test_valid_ai_request_with_api_key(self):
+        """Test valid AIRequest creation with API key."""
+        request = AIRequest(api_key=FAKE_GEMINI_API_KEY)
+        assert request.api_key == FAKE_GEMINI_API_KEY
+
+    def test_valid_ai_request_without_api_key(self):
+        """Test valid AIRequest creation without API key."""
+        request = AIRequest()
+        assert request.api_key is None
+
+    def test_valid_ai_request_with_none_api_key(self):
+        """Test valid AIRequest creation with explicit None API key."""
+        request = AIRequest(api_key=None)
+        assert request.api_key is None
+
+    def test_ai_request_forbids_extra_fields(self):
+        """Test AIRequest forbids extra fields to catch client typos."""
+        with pytest.raises(ValidationError) as exc_info:
+            AIRequest(
+                api_key=FAKE_GEMINI_API_KEY,
+                extra_typo_field="this should be rejected",  # Typo should be caught
+            )
+
+        error = exc_info.value.errors()[0]
+        assert error["type"] == "extra_forbidden"
+        assert "extra_typo_field" in error["loc"]
+
+    def test_ai_request_forbids_misspelled_fields(self):
+        """Test AIRequest catches common field misspellings."""
+        with pytest.raises(ValidationError) as exc_info:
+            AIRequest(
+                api_ky=FAKE_GEMINI_API_KEY,  # Common typo: missing 'e'
+            )
+
+        error = exc_info.value.errors()[0]
+        assert error["type"] == "extra_forbidden"
+        assert "api_ky" in error["loc"]
+
+        with pytest.raises(ValidationError) as exc_info:
+            AIRequest(
+                apikey=FAKE_GEMINI_API_KEY,  # Common typo: missing underscore
+            )
+
+        error = exc_info.value.errors()[0]
+        assert error["type"] == "extra_forbidden"
+        assert "apikey" in error["loc"]
+
+    def test_ai_request_serialization(self):
+        """Test AIRequest JSON serialization."""
+        request = AIRequest(api_key=FAKE_GEMINI_API_KEY)
+        json_data = request.model_dump()
+        assert json_data == {"api_key": FAKE_GEMINI_API_KEY}
+
+        request_none = AIRequest()
+        json_data_none = request_none.model_dump()
+        assert json_data_none == {"api_key": None}

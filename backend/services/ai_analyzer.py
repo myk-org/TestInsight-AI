@@ -120,10 +120,14 @@ class AIAnalyzer:
                     context_parts.append("Repository Source Code Context:")
                     for file_path, content in repo_files:
                         context_parts.append(f"\n--- {file_path} ---\n{content}")
+                # Limit log payload to avoid noisy logs and potential leakage
+                file_sample = [fp for fp, _ in repo_files[:3]]  # Show first 3 files
+                if len(repo_files) > 3:
+                    file_sample.append(f"... and {len(repo_files) - 3} more")
                 logger.debug(
                     "AIAnalyzer: repo files extracted count=%d files=%s",
                     len(repo_files),
-                    [fp for fp, _ in repo_files],
+                    file_sample,
                 )
 
         result_context = "\n\n".join(context_parts)
@@ -135,7 +139,7 @@ class AIAnalyzer:
 
         Args:
             context: Analysis context
-            request: Original request
+            system_prompt: Optional custom system prompt
 
         Returns:
             List of AI insights
@@ -437,7 +441,7 @@ class AIAnalyzer:
                 "Based on the analysis context and insights, provide concrete code-change recommendations from the cloned repository only. "
                 "Each recommendation MUST be a single string that includes: (1) a one-line rationale, and (2) one or more fenced code blocks "
                 "showing the exact changes (patches or full replacement). The opening fence MUST include a language tag and the path on the same line, "
-                "for example: ```python path: utilities/mtv_migration.py"
+                "for example: ```python path: utilities/mtv_migration.py\n"
                 "Do NOT invent files, functions, or unrelated examples. Do NOT output unified diffs or git patch headers (no lines starting with '--- a/', '+++ b/', or '@@ … @@'). "
                 "Do NOT include ellipses like '...' in code. Provide complete, copy-pastable snippets only."
             )
@@ -579,6 +583,8 @@ class AIAnalyzer:
         context: str,
         insights: list[AIInsight],
         included: bool,
+        *,
+        attempted_force: bool = False,
     ) -> list[str]:
         def _strip_diff_headers(s: str) -> str:
             try:
@@ -594,7 +600,7 @@ class AIAnalyzer:
             code_like,
         )
 
-        if included and code_like == 0:
+        if included and code_like == 0 and not attempted_force:
             try:
                 allowed_paths = re.findall(r"(?m)^---\s+([^\n]+)\s+---$", context)
                 allowed_paths = [p.strip() for p in allowed_paths if p.strip()]
@@ -657,7 +663,7 @@ class AIAnalyzer:
             retry_parsed = self._parse_recommendations_to_strings(retry_raw)
             if retry_parsed:
                 # Final sanitation pass (diff headers, etc.)
-                return self._sanitize_and_force_code_blocks(retry_parsed, context, insights, True)
+                return self._sanitize_and_force_code_blocks(retry_parsed, context, insights, True, attempted_force=True)
         return []
 
     def _force_single_file(
@@ -690,7 +696,7 @@ class AIAnalyzer:
         if result.get("success"):
             single_raw = (result.get("content") or "").strip()
             single_parsed = self._parse_recommendations_to_strings(single_raw)
-            return self._sanitize_and_force_code_blocks(single_parsed, context, insights, True)
+            return self._sanitize_and_force_code_blocks(single_parsed, context, insights, True, attempted_force=True)
 
         return []
 

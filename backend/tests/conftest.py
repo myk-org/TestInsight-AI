@@ -21,8 +21,8 @@ FAKE_REPO_PATH = "/tmp/fake_repo_123"
 # Additional test constants for comprehensive token/key management
 FAKE_JENKINS_TOKEN = "fake_token_123"  # pragma: allowlist secret
 FAKE_GITHUB_TOKEN = "fake_github_token_xyz"  # pragma: allowlist secret
-FAKE_GEMINI_API_KEY = "AIzaSyFakeKeyExample123456789"  # pragma: allowlist secret
-FAKE_INVALID_API_KEY = "invalid_key_12345678901234567890"  # pragma: allowlist secret
+FAKE_GEMINI_API_KEY = "AIzaSyFakeKeyExample1234567890123456789"  # pragma: allowlist secret
+FAKE_INVALID_API_KEY = "AIzaSyInvalidKeyButCorrectFormat1234567"  # pragma: allowlist secret
 FAKE_INVALID_FORMAT_KEY = "invalid_format_key"  # pragma: allowlist secret
 FAKE_COMMIT_HASH = "abc123def456"  # pragma: allowlist secret
 FAKE_SHORT_COMMIT = "abc123"  # pragma: allowlist secret

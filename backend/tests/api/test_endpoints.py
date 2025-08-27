@@ -20,6 +20,7 @@ from backend.tests.conftest import (
     FAKE_GITHUB_REPO,
     FAKE_GITHUB_TOKEN,
     FAKE_INVALID_API_KEY,
+    FAKE_INVALID_FORMAT_KEY,
     FAKE_JENKINS_TOKEN,
     FAKE_JENKINS_URL,
     FAKE_JENKINS_USERNAME,
@@ -728,9 +729,19 @@ class TestEndpointValidation:
         assert response.status_code == 422  # Validation error
 
     def test_gemini_models_invalid_api_key_length(self, client):
-        """Test Gemini models with too short API key."""
-        response = client.post("/api/v1/ai/models", json={"api_key": "short"})
-        assert response.status_code == 400  # Service validation error, not schema validation
+        """Test Gemini models with invalid API key length (format validation)."""
+        # Use a key with valid prefix but wrong length to test length validation
+        response = client.post("/api/v1/ai/models", json={"api_key": "AIzaSyShort"})
+        assert response.status_code == 400
+        assert "Invalid API key format" in response.json()["detail"]
+        assert "should be 39 characters long" in response.json()["detail"]
+
+    def test_gemini_models_invalid_api_key_prefix(self, client):
+        """Test Gemini models with invalid API key prefix (format validation)."""
+        response = client.post("/api/v1/ai/models", json={"api_key": FAKE_INVALID_FORMAT_KEY})
+        assert response.status_code == 400
+        assert "Invalid API key format" in response.json()["detail"]
+        assert "should start with 'AIzaSy'" in response.json()["detail"]
 
     def test_settings_update_invalid_data(self, client):
         """Test settings update with invalid data."""
