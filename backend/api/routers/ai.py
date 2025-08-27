@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Body
 from backend.models.schemas import GeminiModelsResponse, AIRequest, KeyValidationResponse
 from backend.services.service_config.client_creators import ServiceClientCreators
 from backend.services.security_utils import SettingsValidator
+from backend.api.routers.constants import INVALID_API_KEY_FORMAT, FAILED_VALIDATE_AUTHENTICATION
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 logger = logging.getLogger(__name__)
@@ -144,6 +145,13 @@ def _merge_and_validate_api_key(query_api_key: str | None, request_body: AIReque
         if not isinstance(request_body.api_key, str):
             raise HTTPException(status_code=400, detail="Invalid API key: must be a string")
 
+        # Check for whitespace-padded or whitespace-only API keys in body before using them
+        # Empty string is handled later, but whitespace-only strings should be rejected
+        if request_body.api_key and (
+            request_body.api_key.strip() != request_body.api_key or request_body.api_key.strip() == ""
+        ):
+            raise HTTPException(status_code=400, detail=FAILED_VALIDATE_AUTHENTICATION)
+
         # Only override if body api_key is non-empty after trimming
         body_api_key = request_body.api_key.strip()
         if body_api_key:
@@ -151,6 +159,10 @@ def _merge_and_validate_api_key(query_api_key: str | None, request_body: AIReque
 
     if api_key is None:
         return None
+
+    # Check for whitespace-padded or whitespace-only API keys
+    if api_key.strip() != api_key or api_key.strip() == "":
+        raise HTTPException(status_code=400, detail=FAILED_VALIDATE_AUTHENTICATION)
 
     # Basic sanitization checks (type already validated above)
     api_key = api_key.strip()
@@ -162,7 +174,7 @@ def _merge_and_validate_api_key(query_api_key: str | None, request_body: AIReque
     format_errors = SettingsValidator.validate_gemini_api_key(api_key)
     if format_errors:
         # Return the first validation error as it's most descriptive
-        error_detail = f"Invalid API key format: {format_errors[0]}"
+        error_detail = f"{INVALID_API_KEY_FORMAT}: {format_errors[0]}"
         raise HTTPException(status_code=400, detail=error_detail)
 
     return api_key
@@ -267,7 +279,7 @@ async def validate_gemini_api_key(
     except TypeError:
         # Handle invalid API key type (same as models endpoint)
         logger.error("TypeError in validate_gemini_api_key - invalid API key type")
-        raise HTTPException(status_code=400, detail="API key must be a string")
+        raise HTTPException(status_code=400, detail="Invalid API key format")
     except TimeoutError:
         # Map timeouts to 504 Gateway Timeout
         logger.error("Timeout error in validate_gemini_api_key - request exceeded time limit")

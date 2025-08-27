@@ -1,9 +1,15 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useSettings, AppSettings, SettingsUpdate, ConnectionTestResult, defaultSettings } from '../contexts/SettingsContext';
 import { validateGeminiApiKey, fetchGeminiModels, getSecretsStatus, testConnectionWithConfig } from '../services/api';
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
+// Normalize API base URL to avoid double slashes and support relative URLs
+const normalizeApiUrl = (url: string) => {
+  if (!url) return 'http://localhost:8000';
+  return url.replace(/\/+$/, ''); // Remove trailing slashes
+};
+
+const API_BASE_URL = normalizeApiUrl((import.meta as any).env?.VITE_API_URL || 'http://localhost:8000');
 
 interface FormErrors {
   [key: string]: string;
@@ -472,15 +478,22 @@ const Settings: React.FC = () => {
       } else if (section === 'github' && newStatus.github) {
         newStatus.github = { ...newStatus.github, tested: false, result: undefined };
       } else if (section === 'ai' && newStatus.ai) {
-        // Only clear connection status when API key changes, not when model selection changes
-        if (field === 'gemini_api_key' && value && value.trim() !== '') {
-          // Mark that user entered a new API key
-          setUserEnteredNewApiKey(true);
-          setAttemptedAutoLoad(false);
-          // Only clear models if a new non-empty API key is being entered
-          newStatus.ai = { ...newStatus.ai, tested: false, result: undefined };
-          setAvailableModels([]);
-          setModelsError(null);
+        // Handle API key changes
+        if (field === 'gemini_api_key') {
+          if (value && value.trim() !== '') {
+            // Mark that user entered a new API key
+            setUserEnteredNewApiKey(true);
+            setAttemptedAutoLoad(false);
+            // Clear models when new API key is being entered
+            newStatus.ai = { ...newStatus.ai, tested: false, result: undefined };
+            setAvailableModels([]);
+            setModelsError(null);
+          } else if (!secretsStatus?.ai?.gemini_api_key) {
+            // API key field is cleared and no saved key exists - clear models
+            setAvailableModels([]);
+            setModelsError(null);
+            newStatus.ai = { ...newStatus.ai, tested: false, result: undefined };
+          }
         }
       }
       return newStatus;
@@ -501,17 +514,22 @@ const Settings: React.FC = () => {
       // Build update payload, excluding empty secret fields to prevent clearing stored secrets
       const update: SettingsUpdate = {
         jenkins: {
-          ...formData.jenkins,
+          // Copy non-secret fields first
+          url: formData.jenkins.url,
+          username: formData.jenkins.username,
+          verify_ssl: formData.jenkins.verify_ssl,
           // Only include api_token if user provided a non-empty value
           ...(formData.jenkins.api_token?.trim() ? { api_token: formData.jenkins.api_token } : {})
         },
         github: {
-          ...formData.github,
           // Only include token if user provided a non-empty value
           ...(formData.github.token?.trim() ? { token: formData.github.token } : {})
         },
         ai: {
-          ...formData.ai,
+          // Copy non-secret fields first
+          model: formData.ai.model,
+          temperature: formData.ai.temperature,
+          max_tokens: formData.ai.max_tokens,
           // Only include gemini_api_key if user provided a non-empty value
           ...(formData.ai.gemini_api_key?.trim() ? { gemini_api_key: formData.ai.gemini_api_key } : {})
         },
@@ -976,16 +994,15 @@ const Settings: React.FC = () => {
 
   const [loadingStartedAt, setLoadingStartedAt] = useState<number | null>(null);
   const [stalled, setStalled] = useState(false);
+  const timeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Track loading start time and stalled state
   useEffect(() => {
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-
     if (loading) {
       // Loading started - track start time and set stalled timer
       if (loadingStartedAt === null) {
         setLoadingStartedAt(Date.now());
-        timeoutId = setTimeout(() => {
+        timeoutIdRef.current = setTimeout(() => {
           setStalled(true);
         }, 10000);
       }
@@ -993,18 +1010,20 @@ const Settings: React.FC = () => {
       // Loading stopped - reset everything
       setLoadingStartedAt(null);
       setStalled(false);
-      if (timeoutId) {
-        clearTimeout(timeoutId);
+      if (timeoutIdRef.current) {
+        clearTimeout(timeoutIdRef.current);
+        timeoutIdRef.current = null;
       }
     }
 
-    // Cleanup timeout on unmount or dependency change
+    // Cleanup timeout on unmount
     return () => {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
+      if (timeoutIdRef.current) {
+        clearTimeout(timeoutIdRef.current);
+        timeoutIdRef.current = null;
       }
     };
-  }, [loading, loadingStartedAt]);
+  }, [loading]); // Only depend on loading, not loadingStartedAt
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">

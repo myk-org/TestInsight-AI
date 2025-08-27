@@ -15,6 +15,7 @@ from backend.models.schemas import (
     GitHubSettings,
     JenkinsSettings,
 )
+from backend.api.routers.constants import FAILED_VALIDATE_AUTHENTICATION
 from backend.tests.conftest import (
     FAKE_GEMINI_API_KEY,  # gitleaks:allow
     FAKE_GITHUB_TOKEN,  # gitleaks:allow
@@ -353,7 +354,11 @@ class TestAIModelsEndpoints:
         response = client.post(f"/api/v1/ai/models?api_key={api_key}")
 
         assert response.status_code == expected_status
-        assert expected_detail_contains in response.json()["detail"]
+        error_response = response.json()
+        # Assert error payload shape - should have "detail" field, not "message"
+        assert "detail" in error_response
+        assert "message" not in error_response
+        assert expected_detail_contains in error_response["detail"]
 
     @pytest.mark.parametrize(
         "client_side_effect,api_key,expected_status,expected_valid,expected_detail_contains",
@@ -371,6 +376,13 @@ class TestAIModelsEndpoints:
                 503,
                 None,  # No 'valid' field in error responses
                 "Service unavailable",
+            ),
+            (
+                TypeError("Non-string key"),  # TypeError for non-string keys
+                FAKE_INVALID_API_KEY,
+                400,
+                None,  # No 'valid' field in error responses
+                "Invalid API key format",
             ),
         ],
     )
@@ -420,16 +432,30 @@ class TestAIModelsEndpoints:
         data = response.json()
         assert isinstance(data["detail"], list)
 
-    def test_validate_key_precedence_empty_string_body_uses_query(self, client):
+    @patch("backend.api.routers.ai.ServiceClientCreators")
+    def test_validate_key_precedence_empty_string_body_uses_query(self, mock_creators, client):
         """Test that empty string body API key doesn't override valid query parameter in validate-key."""
+        # Mock the ServiceClientCreators instance and the full chain
+        mock_creators_instance = Mock()
+        mock_creators.return_value = mock_creators_instance
+
+        # Mock successful client creation (just needs to not raise exception)
+        mock_ai_analyzer = Mock()
+        mock_creators_instance.create_configured_ai_client.return_value = mock_ai_analyzer
+
         response = client.post(
             f"/api/v1/ai/models/validate-key?api_key={FAKE_GEMINI_API_KEY}",  # Valid query parameter
             json={"api_key": ""},  # Empty body should not override
         )
-        # Should use query parameter and not get a format validation error for empty string
-        if response.status_code == 400:
-            assert "Invalid API key format" not in response.json().get("detail", "")
-        # Otherwise, should succeed with query parameter
+
+        # Should succeed with mocked client
+        assert response.status_code == 200
+        data = response.json()
+        assert data["valid"] is True
+        assert data["message"] == "API key format is valid and client initialized successfully"
+
+        # Verify the mock was called with the query parameter, not empty string
+        mock_creators_instance.create_configured_ai_client.assert_called_once_with(api_key=FAKE_GEMINI_API_KEY)
 
 
 class TestSettingsEndpoints:
@@ -715,6 +741,18 @@ class TestEndpointValidation:
         assert "Invalid API key format" in response.json()["detail"]
         assert "should start with 'AIzaSy'" in response.json()["detail"]
 
+    def test_gemini_models_whitespace_validation(self, client):
+        """Test that whitespace-padded or whitespace-only API keys return authentication error."""
+        # Test whitespace-padded key
+        response = client.post("/api/v1/ai/models", json={"api_key": "  " + FAKE_GEMINI_API_KEY + "  "})
+        assert response.status_code == 400
+        assert response.json()["detail"] == FAILED_VALIDATE_AUTHENTICATION
+
+        # Test whitespace-only key
+        response = client.post("/api/v1/ai/models", json={"api_key": "   "})
+        assert response.status_code == 400
+        assert response.json()["detail"] == FAILED_VALIDATE_AUTHENTICATION
+
     def test_gemini_models_api_key_whitespace_handling(self, client):
         """Test Gemini models with whitespace-padded API key."""
         # Test whitespace handling - should be rejected by Gemini API
@@ -749,18 +787,39 @@ class TestEndpointValidation:
         data = response.json()
         assert isinstance(data["detail"], list)
 
-    def test_api_key_precedence_string_body_overrides_query(self, client):
+    @patch("backend.api.routers.ai.ServiceClientCreators")
+    def test_api_key_precedence_string_body_overrides_query(self, mock_creators, client):
         """Test that valid string body API key properly overrides query parameter."""
+        # Mock the ServiceClientCreators instance and the full chain
+        mock_creators_instance = Mock()
+        mock_creators.return_value = mock_creators_instance
+
+        # Mock the AI analyzer and its client
+        mock_ai_analyzer = Mock()
+        mock_creators_instance.create_configured_ai_client.return_value = mock_ai_analyzer
+
+        # Mock the underlying GeminiClient response
+        mock_gemini_client = Mock()
+        mock_ai_analyzer.client = mock_gemini_client
+
+        mock_response = GeminiModelsResponse(
+            success=True,
+            models=[],
+            total_count=0,
+            message="Success",
+            error_details=None,
+        )
+        mock_gemini_client.get_available_models.return_value = mock_response
+
         # Use an invalid query key but valid body key to test precedence
         response = client.post(
             "/api/v1/ai/models?api_key=invalid-query-key",
             json={"api_key": FAKE_GEMINI_API_KEY},  # Valid body should override
         )
-        # Should use the body API key and attempt to validate it (might succeed or fail based on mock)
-        # At minimum, shouldn't get a type validation error
-        if response.status_code == 400:
-            assert "must be a string" not in response.json().get("detail", "")
-        # Otherwise, should proceed with body API key validation
+
+        # Should succeed and use the body key, not the query key
+        assert response.status_code == 200
+        mock_creators_instance.create_configured_ai_client.assert_called_once_with(api_key=FAKE_GEMINI_API_KEY)
 
     def test_api_key_precedence_empty_string_body_uses_query(self, client):
         """Test that empty string body API key doesn't override valid query parameter."""
