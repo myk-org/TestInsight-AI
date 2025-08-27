@@ -16,7 +16,9 @@ logger = logging.getLogger(__name__)
 # Precompiled regex patterns for performance
 REGEX_AUTH = re.compile(r"\bauth\b")
 REGEX_QUOTA = re.compile(r"\bquota\b")
-REGEX_RATE = re.compile(r"\brate\b")
+REGEX_RATE_LIMIT = re.compile(
+    r"\brate(?:[\s\-]?limit|[\s\-]?limited|\s+too\s+high|\s+exceeded|\s+throttle)\b"
+)  # Tightened for rate limiting contexts
 
 # Error keyword mapping for API error status code classification
 # Order matters: more specific errors should come first
@@ -49,7 +51,7 @@ ERROR_KEYWORD_MAPPING: dict[int, list[Union[str, re.Pattern[str]]]] = {
         "rate limit",
         "too many requests",
         REGEX_QUOTA,  # Precompiled pattern for word boundary matching
-        REGEX_RATE,  # Precompiled pattern for word boundary matching
+        REGEX_RATE_LIMIT,  # Tightened pattern to avoid false positives on unrelated "rate" words
         "throttle",
         "quota limit",
     ],

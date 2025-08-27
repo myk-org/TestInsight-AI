@@ -39,14 +39,24 @@ class AIAnalyzer:
         """
         # Log repository URL presence instead of full URL to prevent data leakage
         repo_url_present = bool(getattr(request, "repository_url", None))
+        # Extract and trim branch/commit info for logging (max 7 chars for commit hash)
+        branch = getattr(request, "repository_branch", None)
+        commit = getattr(request, "repository_commit", None)
+
+        # Trim commit hash to first 7 chars for security (reduced sensitive data leakage)
+        commit_short = commit[:7] if isinstance(commit, str) and commit else commit
+
+        # Only log branch when it differs from default to reduce log verbosity
+        branch_to_log = branch if branch and branch not in ("main", "master", "develop") else None
+
         logger.debug(
             "AIAnalyzer: analyze start text_len=%d include_repo=%s system_prompt=%s repo_url_present=%s branch=%s commit=%s",
             len(getattr(request, "text", "") or ""),
             getattr(request, "include_repository_context", False),
             bool(getattr(request, "system_prompt", None)),
             repo_url_present,
-            getattr(request, "repository_branch", None),
-            getattr(request, "repository_commit", None),
+            branch_to_log,
+            commit_short,
         )
         # Extract repo limits from request (no instance storage to avoid concurrency issues)
         try:
@@ -201,9 +211,10 @@ class AIAnalyzer:
         """
         content = raw_content.strip()
 
-        # Remove markdown code fences (e.g., ```json, ```JSON, ``` with optional language)
-        content = re.sub(r"^\s*```[a-zA-Z]*\s*\n?", "", content)
-        content = re.sub(r"\n?```\s*$", "", content)
+        # Remove markdown code fences - hardened for Windows newlines (CRLF)
+        # Handle both LF (\n) and CRLF (\r\n) line endings robustly
+        content = re.sub(r"^\s*```[a-zA-Z]*\s*\r?\n?", "", content)
+        content = re.sub(r"\r?\n?```\s*$", "", content)
 
         return content.strip()
 
@@ -395,6 +406,7 @@ class AIAnalyzer:
             allowed_clause=allowed_clause if repo_context_included else "",
             context=context,
             insights=insights,
+            repo_context_included=repo_context_included,
         )
 
         response_schema = self._build_response_schema(allowed_paths, repo_context_included)
@@ -477,11 +489,16 @@ class AIAnalyzer:
         allowed_clause: str,
         context: str,
         insights: list[AIInsight],
+        repo_context_included: bool = False,
     ) -> str:
-        output_contract = (
-            "Return ONLY a JSON array of strings. No prose outside JSON. Each string MUST contain at least one fenced code block \n"
-            "whose opening fence includes a language tag and a valid 'path:' on the same line (e.g., ```python path: repo/file.py)."
-        )
+        # Align output contract with response schema based on repository context
+        if repo_context_included:
+            output_contract = (
+                "Return ONLY a JSON array of objects with schema: [{path: string, language: string, code: string, rationale?: string}]. "
+                "Each object represents a code change recommendation for the specified file path."
+            )
+        else:
+            output_contract = "Return ONLY a JSON array of strings. No prose outside JSON. Each string should be a clear, actionable recommendation."
         return f"""
         {instructions}
 
@@ -897,11 +914,11 @@ class AIAnalyzer:
         return files
 
     def _find_file_in_repo(self, repo_path: Path, filename: str) -> Path | None:
-        """Find file in repository by name with optimized search for large repos.
+        """Find file in repository by name with optimized search and basename fallback.
 
         Args:
             repo_path: Path to repository root
-            filename: Name of file to find
+            filename: Name of file to find (may include subdirectory like "subdir/file.py")
 
         Returns:
             Path to file if found, None otherwise
@@ -909,6 +926,7 @@ class AIAnalyzer:
         try:
             # Priority search in common root directories first for performance
             priority_roots = ["tests", "src", "backend", "frontend", "test", "lib", "pkg"]
+            ignore_dirs = {".git", "node_modules", "__pycache__", ".venv", "venv", "target", ".tox", "build", "dist"}
 
             # First pass: search in priority directories
             for root in priority_roots:
@@ -917,13 +935,9 @@ class AIAnalyzer:
                     for file_path in priority_path.rglob(filename):
                         if file_path.is_file():
                             # Skip files in common ignore directories
-                            path_parts = file_path.parts
-                            if any(
-                                ignore_dir in path_parts
-                                for ignore_dir in [".git", "node_modules", "__pycache__", ".venv", "venv", "target"]
-                            ):
-                                continue
-                            return file_path
+                            path_parts = set(file_path.parts)
+                            if not ignore_dirs.intersection(path_parts):
+                                return file_path
 
             # Second pass: full repository search with depth limit for performance
             max_depth = 8  # Reasonable depth limit to avoid deep traversal
@@ -935,15 +949,48 @@ class AIAnalyzer:
                         continue
 
                     # Skip files in common ignore directories
-                    path_parts = file_path.parts
-                    if any(
-                        ignore_dir in path_parts
-                        for ignore_dir in [".git", "node_modules", "__pycache__", ".venv", "venv", "target"]
-                    ):
-                        continue
-                    return file_path
+                    path_parts = set(file_path.parts)
+                    if not ignore_dirs.intersection(path_parts):
+                        return file_path
+
+            # Fallback: basename search for subdirectory paths like "subdir/file.py"
+            # This handles cases where filename includes path separators
+            basename = Path(filename).name
+            if basename != filename:  # Only do fallback if filename had path components
+                return self._find_file_by_basename_with_limits(repo_path, basename, ignore_dirs, max_depth)
+
         except (OSError, PermissionError):
             # Handle potential filesystem errors
+            pass
+        return None
+
+    def _find_file_by_basename_with_limits(
+        self, repo_path: Path, basename: str, ignore_dirs: set[str], max_depth: int
+    ) -> Path | None:
+        """Find file by basename with depth limits and exclusion filtering.
+
+        Args:
+            repo_path: Repository root path
+            basename: Just the filename (no path components)
+            ignore_dirs: Set of directory names to skip
+            max_depth: Maximum traversal depth
+
+        Returns:
+            Path to file if found, None otherwise
+        """
+        try:
+            for file_path in repo_path.rglob(basename):
+                if file_path.is_file():
+                    # Check depth limit
+                    relative_path = file_path.relative_to(repo_path)
+                    if len(relative_path.parts) > max_depth:
+                        continue
+
+                    # Skip files in ignore directories
+                    path_parts = set(file_path.parts)
+                    if not ignore_dirs.intersection(path_parts):
+                        return file_path
+        except (OSError, PermissionError):
             pass
         return None
 

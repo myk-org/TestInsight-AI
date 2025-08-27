@@ -89,9 +89,9 @@ class TestErrorKeywordMapping:
 
         # Verify specific regex patterns exist
         quota_pattern_found = any(isinstance(kw, Pattern) and kw.pattern == r"\bquota\b" for kw in rate_limit_keywords)
-        rate_pattern_found = any(isinstance(kw, Pattern) and kw.pattern == r"\brate\b" for kw in rate_limit_keywords)
+        rate_pattern_found = any(isinstance(kw, Pattern) and r"\brate(?:" in kw.pattern for kw in rate_limit_keywords)
         assert quota_pattern_found, "Should have quota word boundary regex pattern"
-        assert rate_pattern_found, "Should have rate word boundary regex pattern"
+        assert rate_pattern_found, "Should have tightened rate limit regex pattern to avoid false positives"
 
     def test_error_keyword_mapping_400_bad_request_keywords(self):
         """Test that 400 status code includes bad request keywords."""
