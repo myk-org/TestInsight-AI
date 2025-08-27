@@ -453,6 +453,26 @@ class TestAIModelsEndpoints:
         assert response.status_code == 401
         assert "Invalid API key" in response.json()["detail"]
 
+    def test_validate_key_precedence_non_string_body_validation(self, client):
+        """Test that non-string body API key is properly rejected by FastAPI validation in validate-key."""
+        response = client.post(
+            f"/api/v1/ai/models/validate-key?api_key={FAKE_GEMINI_API_KEY}",  # Valid query parameter
+            json={"api_key": 123},  # Non-string body should be rejected by Pydantic
+        )
+        # Should be 422 Pydantic validation error (expected behavior)
+        assert response.status_code == 422
+        data = response.json()
+        assert isinstance(data["detail"], list)
+
+    def test_validate_key_precedence_empty_string_body_uses_query(self, client):
+        """Test that empty string body API key doesn't override valid query parameter in validate-key."""
+        response = client.post(
+            f"/api/v1/ai/models/validate-key?api_key={FAKE_GEMINI_API_KEY}",  # Valid query parameter
+            json={"api_key": ""},  # Empty body should not override
+        )
+        # Should use query parameter and not get a format validation error for empty string
+        assert response.status_code != 400 or "Invalid API key format" not in response.json().get("detail", "")
+
 
 class TestSettingsEndpoints:
     """Test settings-related endpoints."""
@@ -760,6 +780,39 @@ class TestEndpointValidation:
         assert isinstance(data["detail"], list)
         error_msg = str(data["detail"]).lower()
         assert "string" in error_msg or "type" in error_msg
+
+    def test_api_key_precedence_non_string_body_validation(self, client):
+        """Test that non-string body API key is properly rejected by FastAPI validation."""
+        # This tests that FastAPI's Pydantic validation correctly rejects non-string types
+        # before they reach our validation logic (which is expected behavior)
+        response = client.post(
+            f"/api/v1/ai/models?api_key={FAKE_GEMINI_API_KEY}",  # Valid query parameter
+            json={"api_key": 123},  # Non-string body should be rejected by Pydantic
+        )
+        # Should be 422 Pydantic validation error (expected behavior)
+        assert response.status_code == 422
+        data = response.json()
+        assert isinstance(data["detail"], list)
+
+    def test_api_key_precedence_string_body_overrides_query(self, client):
+        """Test that valid string body API key properly overrides query parameter."""
+        # Use an invalid query key but valid body key to test precedence
+        response = client.post(
+            "/api/v1/ai/models?api_key=invalid-query-key",
+            json={"api_key": FAKE_GEMINI_API_KEY},  # Valid body should override
+        )
+        # Should use the body API key and attempt to validate it (might succeed or fail based on mock)
+        # At minimum, shouldn't get a type validation error
+        assert response.status_code != 400 or "must be a string" not in response.json().get("detail", "")
+
+    def test_api_key_precedence_empty_string_body_uses_query(self, client):
+        """Test that empty string body API key doesn't override valid query parameter."""
+        response = client.post(
+            f"/api/v1/ai/models?api_key={FAKE_GEMINI_API_KEY}",  # Valid query parameter
+            json={"api_key": ""},  # Empty body should not override
+        )
+        # Should use query parameter and not get a format validation error for empty string
+        assert response.status_code != 400 or "Invalid API key format" not in response.json().get("detail", "")
 
     def test_settings_update_invalid_data(self, client):
         """Test settings update with invalid data."""

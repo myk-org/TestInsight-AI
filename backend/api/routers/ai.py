@@ -117,18 +117,19 @@ def _merge_and_validate_api_key(query_api_key: str | None, request_body: AIReque
     # Apply precedence rules: body overrides query parameter only when non-empty
     api_key = query_api_key
     if request_body and request_body.api_key is not None:
+        # Validate type before str() coercion to prevent non-strings from overriding valid query parameters
+        if not isinstance(request_body.api_key, str):
+            raise HTTPException(status_code=400, detail="Invalid API key: must be a string")
+
         # Only override if body api_key is non-empty after trimming
-        body_api_key = str(request_body.api_key).strip()
+        body_api_key = request_body.api_key.strip()
         if body_api_key:
             api_key = request_body.api_key
 
     if api_key is None:
         return None
 
-    # Basic type and sanitization checks
-    if not isinstance(api_key, str):
-        raise HTTPException(status_code=400, detail="Invalid API key: must be a string")
-
+    # Basic sanitization checks (type already validated above)
     api_key = api_key.strip()
     if not api_key:
         return None
@@ -239,5 +240,5 @@ async def validate_gemini_api_key(
         raise HTTPException(status_code=401, detail=str(e))
     except Exception as e:
         # Handle any unexpected errors - log details but return generic message
-        logger.error("Unexpected error in validate_gemini_api_key: %s", type(e).__name__)
+        logger.error("Unexpected error in validate_gemini_api_key: %s", type(e).__name__, exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error occurred during API key validation")
