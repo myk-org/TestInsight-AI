@@ -13,6 +13,12 @@ from backend.api.routers.constants import (
     INVALID_API_KEY_FORMAT,
     FAILED_VALIDATE_AUTHENTICATION,
     INTERNAL_SERVER_ERROR_FETCHING_MODELS,
+    BAD_GATEWAY_UPSTREAM_SERVICE_ERROR,
+    INVALID_API_KEY_TYPE_ERROR,
+    REQUEST_TIMEOUT_ERROR,
+    SERVICE_UNAVAILABLE_ERROR,
+    API_KEY_VALID_CLIENT_INITIALIZED,
+    INTERNAL_SERVER_ERROR_VALIDATE_KEY,
 )
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -156,7 +162,7 @@ def _merge_and_validate_api_key(query_api_key: str | None, request_body: AIReque
     if request_body and request_body.api_key is not None:
         # Validate type before str() coercion to prevent non-strings from overriding valid query parameters
         if not isinstance(request_body.api_key, str):
-            raise HTTPException(status_code=400, detail="Invalid API key: must be a string")
+            raise HTTPException(status_code=400, detail=INVALID_API_KEY_TYPE_ERROR)
 
         # Check for whitespace-padded or whitespace-only API keys in body before using them
         # Empty string is handled later, but whitespace-only strings should be rejected
@@ -168,7 +174,7 @@ def _merge_and_validate_api_key(query_api_key: str | None, request_body: AIReque
         # Only override if body api_key is non-empty after trimming
         body_api_key = request_body.api_key.strip()
         if body_api_key:
-            api_key = request_body.api_key
+            api_key = body_api_key
 
     if api_key is None:
         return None
@@ -179,8 +185,6 @@ def _merge_and_validate_api_key(query_api_key: str | None, request_body: AIReque
 
     # Basic sanitization checks (type already validated above)
     api_key = api_key.strip()
-    if not api_key:
-        return None
 
     # Fast fail format validation before touching external services
     # This provides better error messages and prevents unnecessary API calls
@@ -234,7 +238,7 @@ async def get_gemini_models(
                     raise HTTPException(status_code=status_code, detail=generic_detail)
 
             # Unknown upstream failures - use 502 Bad Gateway instead of 500
-            raise HTTPException(status_code=502, detail="Bad gateway - upstream service error")
+            raise HTTPException(status_code=502, detail=BAD_GATEWAY_UPSTREAM_SERVICE_ERROR)
 
         return response
 
@@ -244,14 +248,18 @@ async def get_gemini_models(
     except ValueError as e:
         # Handle ServiceConfig validation errors (no API key configured)
         raise HTTPException(status_code=400, detail=str(e))
+    except TypeError:
+        # Handle invalid API key type (same as validate-key endpoint)
+        logger.error("TypeError in get_gemini_models - invalid API key type")
+        raise HTTPException(status_code=400, detail=INVALID_API_KEY_FORMAT)
     except TimeoutError:
         # Map timeouts to 504 Gateway Timeout
         logger.error("Timeout error in get_gemini_models - request exceeded time limit")
-        raise HTTPException(status_code=504, detail="Request timeout")
+        raise HTTPException(status_code=504, detail=REQUEST_TIMEOUT_ERROR)
     except ConnectionError:
         # Map generic connection issues to 503 Service Unavailable
         logger.error("Connection error in get_gemini_models - service connectivity issue")
-        raise HTTPException(status_code=503, detail="Service unavailable")
+        raise HTTPException(status_code=503, detail=SERVICE_UNAVAILABLE_ERROR)
     except Exception:
         # Handle any unexpected errors - log details but return generic message
         logger.error("Unexpected error in get_gemini_models - unhandled exception occurred", exc_info=True)
@@ -281,7 +289,7 @@ async def validate_gemini_api_key(
         # If we get here, the client was created successfully, which means the API key is valid
         return KeyValidationResponse(
             valid=True,
-            message="API key format is valid and client initialized successfully",
+            message=API_KEY_VALID_CLIENT_INITIALIZED,
         )
 
     except HTTPException:
@@ -296,12 +304,12 @@ async def validate_gemini_api_key(
     except TimeoutError:
         # Map timeouts to 504 Gateway Timeout
         logger.error("Timeout error in validate_gemini_api_key - request exceeded time limit")
-        raise HTTPException(status_code=504, detail="Request timeout")
+        raise HTTPException(status_code=504, detail=REQUEST_TIMEOUT_ERROR)
     except ConnectionError:
         # Map generic connection issues to 503 Service Unavailable
         logger.error("Connection error in validate_gemini_api_key - service connectivity issue")
-        raise HTTPException(status_code=503, detail="Service unavailable")
+        raise HTTPException(status_code=503, detail=SERVICE_UNAVAILABLE_ERROR)
     except Exception:
         # Handle any unexpected errors - log details but return generic message
         logger.error("Unexpected error in validate_gemini_api_key - unhandled exception occurred", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error occurred during API key validation")
+        raise HTTPException(status_code=500, detail=INTERNAL_SERVER_ERROR_VALIDATE_KEY)

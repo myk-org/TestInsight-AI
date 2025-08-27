@@ -19,6 +19,7 @@ from backend.api.routers.constants import (
     FAILED_VALIDATE_AUTHENTICATION,
     INVALID_API_KEY_FORMAT,
     INTERNAL_SERVER_ERROR_FETCHING_MODELS,
+    BAD_GATEWAY_UPSTREAM_SERVICE_ERROR,
 )
 from backend.tests.conftest import (
     FAKE_GEMINI_API_KEY,
@@ -319,6 +320,13 @@ class TestAIModelsEndpoints:
                 FAKE_GEMINI_API_KEY,
                 429,
                 "Rate limit exceeded",
+            ),
+            (
+                None,  # No error message
+                None,  # No error details
+                FAKE_GEMINI_API_KEY,
+                502,
+                BAD_GATEWAY_UPSTREAM_SERVICE_ERROR,
             ),
         ],
     )
