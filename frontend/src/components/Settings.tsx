@@ -7,6 +7,16 @@ interface FormErrors {
   [key: string]: string;
 }
 
+interface AIModel {
+  name: string;
+  displayName?: string;
+  description?: string;
+  temperature?: number;
+  topK?: number;
+  topP?: number;
+  maxOutputTokens?: number;
+}
+
 interface ConnectionStatus {
   [key: string]: {
     testing: boolean;
@@ -68,7 +78,7 @@ const Settings: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'jenkins' | 'github' | 'ai'>(getActiveTabFromUrl());
 
   // AI models state
-  const [availableModels, setAvailableModels] = useState<any[]>([]);
+  const [availableModels, setAvailableModels] = useState<AIModel[]>([]);
   const [secretsStatus, setSecretsStatus] = useState<Record<string, Record<string, boolean>>>({});
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
@@ -103,25 +113,28 @@ const Settings: React.FC = () => {
   // Initialize form data when settings are loaded
   useEffect(() => {
     if (settings) {
-      // Clear masked values from sensitive fields for form display
+      // Never echo secrets into form fields for security
       const validatedSettings = {
         ...settings,
         jenkins: {
           ...settings.jenkins,
-          // Clear masked API token so placeholder shows
-          api_token: settings.jenkins.api_token?.includes('...') ? '' : settings.jenkins.api_token,
+          // Do not render secrets back into inputs
+          api_token: '',
         },
         github: {
           ...settings.github,
-          // Clear masked token so placeholder shows
-          token: settings.github.token?.includes('...') ? '' : settings.github.token,
+          // Do not render secrets back into inputs
+          token: '',
         },
         ai: {
           ...settings.ai,
-          // Clear masked API key so placeholder shows
-          gemini_api_key: settings.ai.gemini_api_key?.includes('...') ? '' : settings.ai.gemini_api_key,
+          // Do not render secrets back into inputs
+          gemini_api_key: '',
           // Keep model as provided in settings
           model: settings.ai.model || '',
+        },
+        preferences: {
+          ...settings.preferences,
         }
       };
       setFormData(validatedSettings);
@@ -245,7 +258,7 @@ const Settings: React.FC = () => {
 
   // Utility function to check if API key is valid format
   const isValidApiKeyFormat = (apiKey: string): boolean => {
-    return apiKey.startsWith('AIzaSy') && apiKey.length === 39;
+    return typeof apiKey === 'string' && apiKey.trim().length > 0; // basic presence check  // pragma: allowlist secret
   };
 
   // Handle tab change with URL update
@@ -297,6 +310,7 @@ const Settings: React.FC = () => {
             headers: {
               'Content-Type': 'application/json',
             },
+            credentials: 'include',
           });
 
           if (!response.ok) {
@@ -358,11 +372,12 @@ const Settings: React.FC = () => {
     if (!isValidApiKeyFormat(apiKey)) {
       return {
         success: false,
-        error: 'API key must start with "AIzaSy" and be 39 characters long'
+        error: 'API key is required'
       };
     }
 
     try {
+      setApiKeyValidating(true);
       // First validate the API key
       const validation = await validateGeminiApiKey(apiKey);
 
@@ -384,6 +399,8 @@ const Settings: React.FC = () => {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to fetch models'
       };
+    } finally {
+      setApiKeyValidating(false);
     }
   }, []);
 
@@ -425,8 +442,6 @@ const Settings: React.FC = () => {
     if (!formData) return;
 
     setFormData(prev => {
-      if (!prev) return defaultSettings;
-
       const currentSection = prev[section] as Record<string, any>;
 
       return {
@@ -487,6 +502,7 @@ const Settings: React.FC = () => {
         jenkins: formData.jenkins,
         github: formData.github,
         ai: formData.ai,
+        preferences: formData.preferences,
       };
 
       await updateSettings(update);
@@ -531,20 +547,20 @@ const Settings: React.FC = () => {
       const savedConnectionStatus = connectionStatus;
       const savedModelsError = modelsError;
 
-      // Set a flag to indicate we just saved, so we can restore state after settings reload
-      setTimeout(() => {
-        if (savedModels.length > 0 && !userEnteredNewApiKey) {
-          // Restore models if they existed and user didn't enter a new API key
-          setAvailableModels(savedModels);
-          setModelsError(savedModelsError);
-          setConnectionStatus(prev => ({
-            ...prev,
-            ai: savedConnectionStatus.ai || prev.ai
-          }));
-        }
-        // Reset the flag after restoration
-        setUserEnteredNewApiKey(false);
-      }, 100); // Small delay to let settings reload complete
+      // Reload settings explicitly and then restore view state
+      await fetchSettings();
+
+      if (savedModels.length > 0 && !userEnteredNewApiKey) {
+        // Restore models if they existed and user didn't enter a new API key
+        setAvailableModels(savedModels);
+        setModelsError(savedModelsError);
+        setConnectionStatus(prev => ({
+          ...prev,
+          ai: savedConnectionStatus.ai || prev.ai
+        }));
+      }
+      // Reset the flag after restoration
+      setUserEnteredNewApiKey(false);
     } catch (err) {
       // Error is handled by the context - additional safety check
       if (err && typeof err === 'object' && 'message' in err && typeof (err as any).message === 'string') {
@@ -648,6 +664,7 @@ const Settings: React.FC = () => {
           headers: {
             'Content-Type': 'application/json',
           },
+          credentials: 'include',
         });
 
         const result = await response.json();
@@ -690,6 +707,7 @@ const Settings: React.FC = () => {
           headers: {
             'Content-Type': 'application/json',
           },
+          credentials: 'include',
         });
 
         const result = await response.json();
@@ -746,6 +764,7 @@ const Settings: React.FC = () => {
             headers: {
               'Content-Type': 'application/json',
             },
+            credentials: 'include',
             body: JSON.stringify({
               service: 'ai',
               config: aiFormData
@@ -776,6 +795,7 @@ const Settings: React.FC = () => {
             headers: {
               'Content-Type': 'application/json',
             },
+            credentials: 'include',
           });
 
           const result = await response.json();
@@ -804,18 +824,15 @@ const Settings: React.FC = () => {
         setModelsError(null);
 
         // Update model if current selection is not available
-        const modelNames = modelsResult.models.map((model: any) => model.name);
+        const modelNames = modelsResult.models.map((model: AIModel) => model.name);
         if (!modelNames.includes(aiConfig.model) && modelsResult.models.length > 0) {
-          setFormData(prev => {
-            if (!prev) return defaultSettings;
-            return {
-              ...prev,
-              ai: {
-                ...prev.ai,
-                model: modelsResult.models![0].name,
-              },
-            };
-          });
+          setFormData(prev => ({
+            ...prev,
+            ai: {
+              ...prev.ai,
+              model: modelsResult.models![0].name,
+            },
+          }));
         }
 
         return {
@@ -891,6 +908,10 @@ const Settings: React.FC = () => {
       if (fileInput) {
         fileInput.value = '';
       }
+      // Refresh settings and secrets status after restore
+      await fetchSettings();
+      const status = await getSecretsStatus();
+      setSecretsStatus(status);
     } catch (err) {
       console.error('Restore failed:', err);
       setErrorMessage(err instanceof Error ? err.message : 'Failed to restore settings');
@@ -941,9 +962,37 @@ const Settings: React.FC = () => {
     return null;
   };
 
-  const [loadingStartedAt] = useState<number>(() => Date.now());
-  const elapsedLoadingMs = Date.now() - loadingStartedAt;
-  const stalled = loading && elapsedLoadingMs > 10000;
+  const [loadingStartedAt, setLoadingStartedAt] = useState<number | null>(null);
+  const [stalled, setStalled] = useState(false);
+
+  // Track loading start time and stalled state
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout | null = null;
+
+    if (loading) {
+      // Loading started - track start time and set stalled timer
+      if (loadingStartedAt === null) {
+        setLoadingStartedAt(Date.now());
+        timeoutId = setTimeout(() => {
+          setStalled(true);
+        }, 10000);
+      }
+    } else {
+      // Loading stopped - reset everything
+      setLoadingStartedAt(null);
+      setStalled(false);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    }
+
+    // Cleanup timeout on unmount or dependency change
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [loading, loadingStartedAt]);
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
@@ -1285,7 +1334,7 @@ const Settings: React.FC = () => {
                       <div className="flex gap-2">
                         <div className="relative flex-1">
                           <select
-                            value={formData.ai.model}
+                            value={modelsLoading ? '' : formData.ai.model}
                             onChange={(e) => handleInputChange('ai', 'model', e.target.value)}
                             disabled={!availableModels.length || modelsLoading}
                             className={`mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:border-primary-500 focus:ring-primary-500 ${
@@ -1300,7 +1349,7 @@ const Settings: React.FC = () => {
                             )}
                             {availableModels.map((model) => (
                               <option key={model.name} value={model.name}>
-                                {model.display_name || model.name}
+                                {model.displayName || model.name}
                               </option>
                             ))}
                           </select>

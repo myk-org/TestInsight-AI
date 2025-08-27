@@ -19,10 +19,18 @@ export interface AISettings {
   max_tokens: number;
 }
 
+export interface UserPreferences {
+  theme: string;
+  language: string;
+  auto_refresh: boolean;
+  results_per_page: number;
+}
+
 export interface AppSettings {
   jenkins: JenkinsSettings;
   github: GitHubSettings;
   ai: AISettings;
+  preferences: UserPreferences;
   last_updated?: string;
 }
 
@@ -30,6 +38,7 @@ export interface SettingsUpdate {
   jenkins?: Partial<JenkinsSettings>;
   github?: Partial<GitHubSettings>;
   ai?: Partial<AISettings>;
+  preferences?: Partial<UserPreferences>;
 }
 
 export interface ConnectionTestResult {
@@ -362,5 +371,11 @@ export const defaultSettings: AppSettings = {
     model: '',
     temperature: 0.7,
     max_tokens: 4096,
+  },
+  preferences: {
+    theme: 'system',
+    language: 'en',
+    auto_refresh: false,
+    results_per_page: 20,
   },
 };
