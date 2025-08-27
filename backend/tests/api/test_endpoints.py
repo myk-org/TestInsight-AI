@@ -16,12 +16,12 @@ from backend.models.schemas import (
 )
 from backend.services.git_client import GitRepositoryError
 from backend.tests.conftest import (
-    FAKE_GEMINI_API_KEY,
+    FAKE_GEMINI_API_KEY,  # gitleaks:allow
     FAKE_GITHUB_REPO,
-    FAKE_GITHUB_TOKEN,
+    FAKE_GITHUB_TOKEN,  # gitleaks:allow
     FAKE_INVALID_API_KEY,
     FAKE_INVALID_FORMAT_KEY,
-    FAKE_JENKINS_TOKEN,
+    FAKE_JENKINS_TOKEN,  # gitleaks:allow
     FAKE_JENKINS_URL,
     FAKE_JENKINS_USERNAME,
     FAKE_REPO_PATH,
@@ -743,11 +743,36 @@ class TestEndpointValidation:
         assert "Invalid API key format" in response.json()["detail"]
         assert "should start with 'AIzaSy'" in response.json()["detail"]
 
+    def test_gemini_models_api_key_whitespace_handling(self, client):
+        """Test Gemini models with whitespace-padded API key."""
+        # Test whitespace handling - should be rejected by Gemini API
+        response = client.post("/api/v1/ai/models", json={"api_key": "  AIzaSyFakeKeyExample1234567890123456789  "})
+        assert response.status_code == 400
+        assert "Failed to validate authentication" in response.json()["detail"]
+
+    def test_gemini_models_non_string_api_key(self, client):
+        """Test Gemini models with non-string API key."""
+        # Test non-string body - should be rejected with validation error
+        response = client.post("/api/v1/ai/models", json={"api_key": 123})
+        assert response.status_code == 422
+        data = response.json()
+        # FastAPI validation errors return detail as a list
+        assert isinstance(data["detail"], list)
+        error_msg = str(data["detail"]).lower()
+        assert "string" in error_msg or "type" in error_msg
+
     def test_settings_update_invalid_data(self, client):
         """Test settings update with invalid data."""
         response = client.put("/api/v1/settings", json={"invalid": "data"})
-        # Should either accept (ignoring invalid fields) or reject
-        assert response.status_code in [200, 422]
+        # API is designed to accept and ignore invalid fields for flexibility
+        assert response.status_code == 200
+
+    def test_settings_update_accepts_partial_valid_data(self, client):
+        """Test settings update accepts partial valid data."""
+        # Test with a valid partial update
+        response = client.put("/api/v1/settings", json={"jenkins": {"url": "https://example.com"}})
+        # Should accept partial valid updates
+        assert response.status_code == 200
 
 
 class TestEndpointErrorHandling:

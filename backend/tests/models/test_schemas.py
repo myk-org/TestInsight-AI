@@ -285,9 +285,13 @@ class TestKeyValidationResponse:
                 extra_typo_field="this should be rejected",  # Typo should be caught
             )
 
-        error = exc_info.value.errors()[0]
-        assert error["type"] == "extra_forbidden"
-        assert "extra_typo_field" in error["loc"]
+        errors = exc_info.value.errors()
+        # Check across all errors to be resilient to error ordering
+        extra_forbidden_errors = [error for error in errors if error["type"] == "extra_forbidden"]
+        assert len(extra_forbidden_errors) > 0
+        # Verify that the extra field is mentioned in at least one error
+        extra_field_mentioned = any("extra_typo_field" in error["loc"] for error in extra_forbidden_errors)
+        assert extra_field_mentioned
 
     def test_key_validation_response_forbids_misspelled_fields(self):
         """Test KeyValidationResponse catches common field misspellings."""
@@ -301,7 +305,7 @@ class TestKeyValidationResponse:
         errors = exc_info.value.errors()
         # Should have both missing required field and extra forbidden field errors
         error_types = {error["type"] for error in errors}
-        assert "missing" in error_types or "extra_forbidden" in error_types
+        assert "missing" in error_types and "extra_forbidden" in error_types
 
         # Test misspelled 'message' field
         with pytest.raises(ValidationError) as exc_info:
@@ -312,7 +316,7 @@ class TestKeyValidationResponse:
 
         errors = exc_info.value.errors()
         error_types = {error["type"] for error in errors}
-        assert "missing" in error_types or "extra_forbidden" in error_types
+        assert "missing" in error_types and "extra_forbidden" in error_types
 
 
 class TestAIRequest:
@@ -341,9 +345,13 @@ class TestAIRequest:
                 extra_typo_field="this should be rejected",  # Typo should be caught
             )
 
-        error = exc_info.value.errors()[0]
-        assert error["type"] == "extra_forbidden"
-        assert "extra_typo_field" in error["loc"]
+        errors = exc_info.value.errors()
+        # Check across all errors to be resilient to error ordering
+        extra_forbidden_errors = [error for error in errors if error["type"] == "extra_forbidden"]
+        assert len(extra_forbidden_errors) > 0
+        # Verify that the extra field is mentioned in at least one error
+        extra_field_mentioned = any("extra_typo_field" in error["loc"] for error in extra_forbidden_errors)
+        assert extra_field_mentioned
 
     def test_ai_request_forbids_misspelled_fields(self):
         """Test AIRequest catches common field misspellings."""
@@ -374,3 +382,7 @@ class TestAIRequest:
         request_none = AIRequest()
         json_data_none = request_none.model_dump()
         assert json_data_none == {"api_key": None}
+
+        # Test exclude_none serialization for sparse payloads
+        json_data_sparse = request_none.model_dump(exclude_none=True)
+        assert json_data_sparse == {}  # Should exclude None values for sparse payload

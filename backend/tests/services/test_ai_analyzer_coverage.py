@@ -43,9 +43,16 @@ def test_find_file_in_repo():
     analyzer = AIAnalyzer(client=mock_client)
 
     with patch("pathlib.Path.rglob") as mock_rglob:
+        # Create a mock file path
         mock_file = Mock()
         mock_file.is_file.return_value = True
-        mock_file.parts = ["tmp", "repo", "test_file.py"]
+        mock_file.parts = ("tmp", "repo", "tests", "test_file.py")
+
+        # Mock the relative_to method to return a mock path with parts attribute
+        mock_relative_path = Mock()
+        mock_relative_path.parts = ("tests", "test_file.py")  # 2 parts, less than max_depth of 8
+        mock_file.relative_to.return_value = mock_relative_path
+
         mock_rglob.return_value = [mock_file]
         result = analyzer._find_file_in_repo(Path("/tmp/repo"), "test_file.py")
         assert result == mock_file

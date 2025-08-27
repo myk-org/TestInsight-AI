@@ -37,12 +37,14 @@ class AIAnalyzer:
         Returns:
             Analysis response with insights
         """
+        # Log repository URL presence instead of full URL to prevent data leakage
+        repo_url_present = bool(getattr(request, "repository_url", None))
         logger.debug(
-            "AIAnalyzer: analyze start text_len=%d include_repo=%s system_prompt=%s repo_url=%s branch=%s commit=%s",
+            "AIAnalyzer: analyze start text_len=%d include_repo=%s system_prompt=%s repo_url_present=%s branch=%s commit=%s",
             len(getattr(request, "text", "") or ""),
             getattr(request, "include_repository_context", False),
             bool(getattr(request, "system_prompt", None)),
-            getattr(request, "repository_url", None),
+            repo_url_present,
             getattr(request, "repository_branch", None),
             getattr(request, "repository_commit", None),
         )
@@ -429,6 +431,14 @@ class AIAnalyzer:
             try:
                 allowed_paths = re.findall(r"(?m)^---\s+([^\n]+)\s+---$", context)
                 allowed_paths = [p.strip() for p in allowed_paths if p.strip()]
+                # Deduplicate while preserving order
+                seen = set()
+                deduplicated = []
+                for x in allowed_paths:
+                    if x not in seen:
+                        seen.add(x)
+                        deduplicated.append(x)
+                allowed_paths = deduplicated
             except Exception:
                 allowed_paths = []
             logger.debug(
@@ -604,6 +614,14 @@ class AIAnalyzer:
             try:
                 allowed_paths = re.findall(r"(?m)^---\s+([^\n]+)\s+---$", context)
                 allowed_paths = [p.strip() for p in allowed_paths if p.strip()]
+                # Deduplicate while preserving order
+                seen = set()
+                deduplicated = []
+                for x in allowed_paths:
+                    if x not in seen:
+                        seen.add(x)
+                        deduplicated.append(x)
+                allowed_paths = deduplicated
             except Exception:
                 allowed_paths = []
             if allowed_paths:
@@ -715,13 +733,32 @@ class AIAnalyzer:
             "HIGH": Severity.HIGH,
             "CRITICAL": Severity.CRITICAL,
         }
-        sev_key = str(data.get("severity", "MEDIUM")).strip().upper()
+
+        # Harden severity parsing to handle "Severity.MEDIUM" format
+        severity_raw = data.get("severity", "MEDIUM")
+        if hasattr(severity_raw, "value"):  # Handle Severity enum objects
+            sev_key = str(severity_raw.value).strip().upper()
+        else:
+            sev_key = str(severity_raw).strip().upper()
+            # Strip "Severity." prefix if present
+            if sev_key.startswith("SEVERITY."):
+                sev_key = sev_key[9:]  # Remove "SEVERITY." prefix
+
+        # Normalize suggestions to list[str] before creating AIInsight
+        suggestions_raw = data.get("suggestions", [])
+        if isinstance(suggestions_raw, list):
+            suggestions = [str(s) for s in suggestions_raw]
+        elif isinstance(suggestions_raw, str):
+            suggestions = [suggestions_raw]
+        else:
+            suggestions = [str(suggestions_raw)] if suggestions_raw else []
+
         return AIInsight(
             title=data.get("title", "Unknown Issue"),
             description=data.get("description", "No description available"),
             severity=severity_map.get(sev_key, Severity.MEDIUM),
             category=data.get("category", "General"),
-            suggestions=data.get("suggestions", []),
+            suggestions=suggestions,
             confidence=data.get("confidence", 0.7),
         )
 
@@ -771,14 +808,14 @@ class AIAnalyzer:
         if not isinstance(max_file_bytes, int) or max_file_bytes <= 0:
             max_file_bytes = 51200
 
-        # 2. Test files mentioned in failure output
+        # 2. Test files mentioned in failure output - improved patterns for nested paths and hyphens
         test_file_patterns = [
-            r"(\w+\.py)::",  # pytest: test_file.py::test_function
-            r"(\w+\.py)",  # Python files
-            r"(\w+\.test\.js)",
-            r"(\w+\.spec\.js)",  # JavaScript test files
-            r"(\w+Test\.java)",  # Java test files
-            r"(\w+_test\.go)",  # Go test files
+            r"([\w\-/]+\.py)::",  # pytest: path/test-file.py::test_function (supports nested paths and hyphens)
+            r"([\w\-/]+\.py)",  # Python files with paths and hyphens
+            r"([\w\-/]+\.test\.js)",
+            r"([\w\-/]+\.spec\.js)",  # JavaScript test files with paths and hyphens
+            r"([\w\-/]+Test\.java)",  # Java test files with paths and hyphens
+            r"([\w\-/]+_test\.go)",  # Go test files with paths and hyphens
         ]
 
         seen_paths: set[str] = set()
@@ -858,7 +895,7 @@ class AIAnalyzer:
         return files
 
     def _find_file_in_repo(self, repo_path: Path, filename: str) -> Path | None:
-        """Find file in repository by name.
+        """Find file in repository by name with optimized search for large repos.
 
         Args:
             repo_path: Path to repository root
@@ -868,9 +905,33 @@ class AIAnalyzer:
             Path to file if found, None otherwise
         """
         try:
-            # Use glob to find the file, limiting search depth for performance
+            # Priority search in common root directories first for performance
+            priority_roots = ["tests", "src", "backend", "frontend", "test", "lib", "pkg"]
+
+            # First pass: search in priority directories
+            for root in priority_roots:
+                priority_path = repo_path / root
+                if priority_path.exists() and priority_path.is_dir():
+                    for file_path in priority_path.rglob(filename):
+                        if file_path.is_file():
+                            # Skip files in common ignore directories
+                            path_parts = file_path.parts
+                            if any(
+                                ignore_dir in path_parts
+                                for ignore_dir in [".git", "node_modules", "__pycache__", ".venv", "venv", "target"]
+                            ):
+                                continue
+                            return file_path
+
+            # Second pass: full repository search with depth limit for performance
+            max_depth = 8  # Reasonable depth limit to avoid deep traversal
             for file_path in repo_path.rglob(filename):
                 if file_path.is_file():
+                    # Check depth to avoid excessive traversal
+                    relative_path = file_path.relative_to(repo_path)
+                    if len(relative_path.parts) > max_depth:
+                        continue
+
                     # Skip files in common ignore directories
                     path_parts = file_path.parts
                     if any(

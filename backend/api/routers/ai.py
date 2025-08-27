@@ -19,7 +19,7 @@ ERROR_KEYWORD_MAPPING = {
         "authentication failed",
         "unauthorized",
         "api key",
-        "auth",
+        r"\bauth\b",  # Word boundary matching for single word
         "credential",
         "invalid token",
         "token expired",
@@ -35,8 +35,8 @@ ERROR_KEYWORD_MAPPING = {
         "quota exceeded",
         "rate limit",
         "too many requests",
-        "quota",
-        "rate",
+        r"\bquota\b",  # Word boundary matching for single word
+        r"\brate\b",  # Word boundary matching for single word
         "throttle",
         "quota limit",
     ],
@@ -63,7 +63,7 @@ ERROR_KEYWORD_MAPPING = {
 }
 
 
-def _classify_error_status_code(error_message: str) -> int | None:
+def classify_error_status_code(error_message: str) -> int | None:
     """Classify error message to appropriate HTTP status code.
 
     Args:
@@ -81,8 +81,16 @@ def _classify_error_status_code(error_message: str) -> int | None:
 
     # Find the first matching status code using module constant
     for status_code, keywords in ERROR_KEYWORD_MAPPING.items():
-        if any(keyword in error_lower for keyword in keywords):
-            return status_code
+        for keyword in keywords:
+            # Handle regex patterns for word boundary matching
+            if keyword.startswith(r"\b") and keyword.endswith(r"\b"):
+                import re
+
+                if re.search(keyword, error_lower):
+                    return status_code
+            # Handle regular substring matching
+            elif keyword in error_lower:
+                return status_code
 
     return None
 
@@ -167,7 +175,7 @@ async def get_gemini_models(
 
             if combined_error:
                 # Classify error using helper function
-                status_code = _classify_error_status_code(combined_error)
+                status_code = classify_error_status_code(combined_error)
                 if status_code:
                     raise HTTPException(status_code=status_code, detail=error_detail)
 

@@ -1,6 +1,6 @@
 """Comprehensive tests for AI router error mapping and classification functionality."""
 
-from backend.api.routers.ai import ERROR_KEYWORD_MAPPING, _classify_error_status_code
+from backend.api.routers.ai import ERROR_KEYWORD_MAPPING, classify_error_status_code
 
 
 class TestErrorKeywordMapping:
@@ -29,7 +29,10 @@ class TestErrorKeywordMapping:
         expected_status_codes = {401, 403, 429, 400, 503, 504}
         actual_status_codes = set(ERROR_KEYWORD_MAPPING.keys())
 
-        assert expected_status_codes == actual_status_codes
+        # Use superset check to be future-proof when adding new classes
+        assert expected_status_codes.issubset(actual_status_codes), (
+            f"Missing expected status codes: {expected_status_codes - actual_status_codes}"
+        )
 
     def test_error_keyword_mapping_401_auth_keywords(self):
         """Test that 401 status code includes authentication-related keywords."""
@@ -41,7 +44,7 @@ class TestErrorKeywordMapping:
             "authentication failed",
             "unauthorized",
             "api key",
-            "auth",
+            r"\bauth\b",  # Word boundary regex pattern
             "credential",
         }
 
@@ -61,7 +64,7 @@ class TestErrorKeywordMapping:
         """Test that 429 status code includes rate limiting keywords."""
         rate_limit_keywords = ERROR_KEYWORD_MAPPING[429]
 
-        expected_keywords = {"quota exceeded", "rate limit", "too many requests", "quota", "rate"}
+        expected_keywords = {"quota exceeded", "rate limit", "too many requests", r"\bquota\b", r"\brate\b"}
 
         actual_keywords = set(rate_limit_keywords)
         assert expected_keywords.issubset(actual_keywords)
@@ -118,13 +121,13 @@ class TestErrorKeywordMapping:
 
 
 class TestClassifyErrorStatusCode:
-    """Test the _classify_error_status_code helper function."""
+    """Test the classify_error_status_code helper function."""
 
     def test_classify_error_status_code_empty_input(self):
         """Test classification with empty or None input."""
-        assert _classify_error_status_code("") is None
-        assert _classify_error_status_code(None) is None
-        assert _classify_error_status_code("   ") is None
+        assert classify_error_status_code("") is None
+        assert classify_error_status_code(None) is None
+        assert classify_error_status_code("   ") is None
 
     def test_classify_error_status_code_401_auth_errors(self):
         """Test classification of authentication errors (401)."""
@@ -140,7 +143,7 @@ class TestClassifyErrorStatusCode:
         ]
 
         for message in auth_messages:
-            result = _classify_error_status_code(message)
+            result = classify_error_status_code(message)
             assert result == 401, f"Message '{message}' should classify as 401"
 
     def test_classify_error_status_code_403_permission_errors(self):
@@ -154,7 +157,7 @@ class TestClassifyErrorStatusCode:
         ]
 
         for message in permission_messages:
-            result = _classify_error_status_code(message)
+            result = classify_error_status_code(message)
             assert result == 403, f"Message '{message}' should classify as 403"
 
     def test_classify_error_status_code_429_rate_limit_errors(self):
@@ -170,7 +173,7 @@ class TestClassifyErrorStatusCode:
         ]
 
         for message in rate_limit_messages:
-            result = _classify_error_status_code(message)
+            result = classify_error_status_code(message)
             assert result == 429, f"Message '{message}' should classify as 429"
 
     def test_classify_error_status_code_400_bad_request_errors(self):
@@ -185,7 +188,7 @@ class TestClassifyErrorStatusCode:
         ]
 
         for message in bad_request_messages:
-            result = _classify_error_status_code(message)
+            result = classify_error_status_code(message)
             assert result == 400, f"Message '{message}' should classify as 400"
 
     def test_classify_error_status_code_503_service_unavailable_errors(self):
@@ -199,7 +202,7 @@ class TestClassifyErrorStatusCode:
         ]
 
         for message in service_messages:
-            result = _classify_error_status_code(message)
+            result = classify_error_status_code(message)
             assert result == 503, f"Message '{message}' should classify as 503"
 
     def test_classify_error_status_code_504_timeout_errors(self):
@@ -211,7 +214,7 @@ class TestClassifyErrorStatusCode:
         ]
 
         for message in timeout_messages:
-            result = _classify_error_status_code(message)
+            result = classify_error_status_code(message)
             assert result == 504, f"Message '{message}' should classify as 504"
 
     def test_classify_error_status_code_case_insensitive(self):
@@ -226,7 +229,7 @@ class TestClassifyErrorStatusCode:
         ]
 
         for message, expected_status in test_cases:
-            result = _classify_error_status_code(message)
+            result = classify_error_status_code(message)
             assert result == expected_status, f"Message '{message}' should classify as {expected_status}"
 
     def test_classify_error_status_code_whitespace_handling(self):
@@ -238,18 +241,18 @@ class TestClassifyErrorStatusCode:
         ]
 
         for message, expected_status in test_cases:
-            result = _classify_error_status_code(message)
+            result = classify_error_status_code(message)
             assert result == expected_status, f"Message '{message}' should classify as {expected_status}"
 
     def test_classify_error_status_code_priority_order(self):
         """Test that more specific errors are classified first (precedence)."""
         # Test that "invalid api key" (401) takes precedence over "invalid" (400)
-        result = _classify_error_status_code("invalid api key provided")
+        result = classify_error_status_code("invalid api key provided")
         assert result == 401, "Should classify as 401 (auth) not 400 (bad request) due to precedence"
 
         # Test that "quota exceeded" (429) takes precedence over "quota" (429)
         # Both should map to 429, but testing the specificity
-        result = _classify_error_status_code("quota exceeded error")
+        result = classify_error_status_code("quota exceeded error")
         assert result == 429
 
     def test_classify_error_status_code_substring_matching(self):
@@ -264,7 +267,7 @@ class TestClassifyErrorStatusCode:
         ]
 
         for message, expected_status in test_cases:
-            result = _classify_error_status_code(message)
+            result = classify_error_status_code(message)
             assert result == expected_status, f"Message '{message}' should classify as {expected_status}"
 
     def test_classify_error_status_code_unknown_errors(self):
@@ -280,7 +283,7 @@ class TestClassifyErrorStatusCode:
         ]
 
         for message in unknown_messages:
-            result = _classify_error_status_code(message)
+            result = classify_error_status_code(message)
             assert result is None, f"Unknown message '{message}' should return None"
 
     def test_classify_error_status_code_complex_messages(self):
@@ -303,7 +306,7 @@ class TestClassifyErrorStatusCode:
         ]
 
         for message, expected_status in complex_messages:
-            result = _classify_error_status_code(message)
+            result = classify_error_status_code(message)
             assert result == expected_status, f"Complex message '{message}' should classify as {expected_status}"
 
     def test_classify_error_status_code_edge_cases(self):
@@ -321,19 +324,19 @@ class TestClassifyErrorStatusCode:
         ]
 
         for message, expected_status in edge_cases:
-            result = _classify_error_status_code(message)
+            result = classify_error_status_code(message)
             assert result == expected_status, f"Edge case '{message}' should classify as {expected_status}"
 
     def test_classify_error_status_code_performance(self):
         """Test that classification performs well with large messages."""
         # Create a large message with the keyword at the end
         large_message = "A" * 10000 + " invalid api key"
-        result = _classify_error_status_code(large_message)
+        result = classify_error_status_code(large_message)
         assert result == 401
 
         # Test with keyword at the beginning
         large_message = "quota exceeded " + "B" * 10000
-        result = _classify_error_status_code(large_message)
+        result = classify_error_status_code(large_message)
         assert result == 429
 
 
@@ -364,7 +367,7 @@ class TestErrorMappingIntegration:
         ]
 
         for error_message, expected_status in gemini_errors:
-            result = _classify_error_status_code(error_message)
+            result = classify_error_status_code(error_message)
             assert result == expected_status, f"Gemini error '{error_message}' should classify as {expected_status}"
 
     def test_combined_error_messages(self):
@@ -380,7 +383,7 @@ class TestErrorMappingIntegration:
         ]
 
         for message, expected_status in combined_messages:
-            result = _classify_error_status_code(message)
+            result = classify_error_status_code(message)
             assert result == expected_status, f"Combined message '{message}' should classify as {expected_status}"
 
     def test_error_mapping_coverage(self):
@@ -396,7 +399,7 @@ class TestErrorMappingIntegration:
         ]
 
         for expected_status, message in test_coverage:
-            result = _classify_error_status_code(message)
+            result = classify_error_status_code(message)
             assert result == expected_status, f"Coverage test failed for status {expected_status}"
 
     def test_non_error_messages(self):
@@ -411,5 +414,28 @@ class TestErrorMappingIntegration:
         ]
 
         for message in non_error_messages:
-            result = _classify_error_status_code(message)
+            result = classify_error_status_code(message)
             assert result is None, f"Non-error message '{message}' should return None"
+
+    def test_word_boundary_matching(self):
+        """Test that word boundary matching prevents false positives."""
+        # Test cases where single-word keywords should NOT match in compound words
+        test_cases = [
+            # "rate" should not match in "separate", "operate", "generate"
+            ("Separate document processing", None),
+            ("Application operates normally", None),
+            ("Generate reports automatically", None),
+            # "quota" should not match in other contexts
+            ("Request quota for new resources", 429),  # This should match as it's a word boundary
+            ("The aqueous solution failed", None),  # "quota" substring should not match
+            # "auth" should not match in "author", "authorize" compound forms but avoid other keywords
+            ("Author document processing", None),  # "auth" in "Author" should not match with word boundary
+            ("Authorize document access", None),  # "auth" in "Authorize" should not match
+            # But should match when used as a word
+            ("Auth failed for user", 401),  # This should match with word boundary
+            ("User auth token expired", 401),  # This should match with word boundary
+        ]
+
+        for message, expected_status in test_cases:
+            result = classify_error_status_code(message)
+            assert result == expected_status, f"Message '{message}' should classify as {expected_status}"
