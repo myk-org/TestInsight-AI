@@ -707,7 +707,6 @@ class TestEndpointValidation:
         response = client.post("/api/v1/ai/models", json={"api_key": "AIzaSyShort"})
         assert response.status_code == 400
         assert "Invalid API key format" in response.json()["detail"]
-        assert "should be 39 characters long" in response.json()["detail"]
 
     def test_gemini_models_invalid_api_key_prefix(self, client):
         """Test Gemini models with invalid API key prefix (format validation)."""

@@ -14,8 +14,13 @@ const deepMerge = <T = any>(target: T, source: any): T => {
 
   for (const key in source) {
     if (Object.prototype.hasOwnProperty.call(source, key)) {
+      // Skip null and undefined values to preserve defaults
+      if (source[key] === null || source[key] === undefined) {
+        continue;
+      }
+
       if (typeof source[key] === 'object' && source[key] !== null && !Array.isArray(source[key])) {
-        result[key] = deepMerge(target[key as keyof T], source[key]);
+        result[key] = deepMerge(target[key as keyof T] ?? {}, source[key]);
       } else {
         result[key] = source[key];
       }
@@ -100,14 +105,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
 
   // Helper function to handle API errors
   const handleApiError = (error: any): string => {
-    // Handle fetch API errors
-    if (error.response?.data?.detail) {
-      return Array.isArray(error.response.data.detail)
-        ? error.response.data.detail.map((e: any) => e.msg || e).join(', ')
-        : error.response.data.detail;
-    }
-
-    // Handle Error objects
+    // Handle Error objects first (fetch API standard)
     if (error instanceof Error) {
       return error.message;
     }
@@ -115,6 +113,13 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
     // Handle string errors
     if (typeof error === 'string') {
       return error;
+    }
+
+    // Handle structured error responses (legacy compatibility)
+    if (error.response?.data?.detail) {
+      return Array.isArray(error.response.data.detail)
+        ? error.response.data.detail.map((e: any) => e.msg || e).join(', ')
+        : error.response.data.detail;
     }
 
     // Handle objects with message property
@@ -301,10 +306,18 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
       let filename = 'testinsight_settings_backup.json';
 
       if (contentDisposition) {
-        const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
-        if (filenameMatch) {
-          // Sanitize filename to remove path separators and dangerous characters
-          filename = filenameMatch[1].replace(/[\/\\:*?"<>|]/g, '_');
+        // Try RFC 5987 filename* first (supports UTF-8)
+        const filenameStarMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)/);
+        if (filenameStarMatch) {
+          // Decode URI component for UTF-8 filename
+          filename = decodeURIComponent(filenameStarMatch[1]).replace(/[\/\\:*?"<>|]/g, '_');
+        } else {
+          // Fallback to standard filename parameter
+          const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+          if (filenameMatch) {
+            // Sanitize filename to remove path separators and dangerous characters
+            filename = filenameMatch[1].replace(/[\/\\:*?"<>|]/g, '_');
+          }
         }
       }
 

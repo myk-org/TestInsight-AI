@@ -12,6 +12,7 @@ interface FormErrors {
 interface AIModel {
   name: string;
   displayName?: string;
+  display_name?: string;  // Backend may return snake_case
   description?: string;
   temperature?: number;
   topK?: number;
@@ -497,10 +498,23 @@ const Settings: React.FC = () => {
     setSuccessMessage(null);
 
     try {
+      // Build update payload, excluding empty secret fields to prevent clearing stored secrets
       const update: SettingsUpdate = {
-        jenkins: formData.jenkins,
-        github: formData.github,
-        ai: formData.ai,
+        jenkins: {
+          ...formData.jenkins,
+          // Only include api_token if user provided a non-empty value
+          ...(formData.jenkins.api_token?.trim() ? { api_token: formData.jenkins.api_token } : {})
+        },
+        github: {
+          ...formData.github,
+          // Only include token if user provided a non-empty value
+          ...(formData.github.token?.trim() ? { token: formData.github.token } : {})
+        },
+        ai: {
+          ...formData.ai,
+          // Only include gemini_api_key if user provided a non-empty value
+          ...(formData.ai.gemini_api_key?.trim() ? { gemini_api_key: formData.ai.gemini_api_key } : {})
+        },
       };
 
       await updateSettings(update);
@@ -1347,7 +1361,7 @@ const Settings: React.FC = () => {
                             )}
                             {availableModels.map((model) => (
                               <option key={model.name} value={model.name}>
-                                {model.displayName || model.name}
+                                {model.displayName || model.display_name || model.name}
                               </option>
                             ))}
                           </select>
