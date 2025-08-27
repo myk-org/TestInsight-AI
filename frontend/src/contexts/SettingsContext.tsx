@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 
 // Utility function to deep merge objects, treating null/undefined as missing
-const deepMerge = (target: any, source: any): any => {
+const deepMerge = <T = any>(target: T, source: any): T => {
   if (source === null || source === undefined) {
     return target;
   }
@@ -10,12 +10,12 @@ const deepMerge = (target: any, source: any): any => {
     return source;
   }
 
-  const result = { ...target };
+  const result = { ...target } as any;
 
   for (const key in source) {
-    if (source.hasOwnProperty(key)) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
       if (typeof source[key] === 'object' && source[key] !== null && !Array.isArray(source[key])) {
-        result[key] = deepMerge(target[key], source[key]);
+        result[key] = deepMerge(target[key as keyof T], source[key]);
       } else {
         result[key] = source[key];
       }
@@ -185,7 +185,8 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
       }
 
       const data = await response.json();
-      setSettings(data);
+      const mergedSettings = deepMerge(defaultSettings, data);
+      setSettings(mergedSettings);
     } catch (err: any) {
       const errorMessage = handleApiError(err);
       setError(errorMessage);
@@ -216,7 +217,8 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
       }
 
       const data = await response.json();
-      setSettings(data);
+      const mergedSettings = deepMerge(defaultSettings, data);
+      setSettings(mergedSettings);
     } catch (err: any) {
       const errorMessage = handleApiError(err);
       setError(errorMessage);
@@ -301,7 +303,8 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
       if (contentDisposition) {
         const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
         if (filenameMatch) {
-          filename = filenameMatch[1];
+          // Sanitize filename to remove path separators and dangerous characters
+          filename = filenameMatch[1].replace(/[\/\\:*?"<>|]/g, '_');
         }
       }
 
@@ -343,7 +346,8 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
       }
 
       const data = await response.json();
-      setSettings(data);
+      const mergedSettings = deepMerge(defaultSettings, data);
+      setSettings(mergedSettings);
     } catch (err: any) {
       const errorMessage = handleApiError(err);
       setError(errorMessage);

@@ -3,6 +3,8 @@ import { useSearchParams } from 'react-router-dom';
 import { useSettings, AppSettings, SettingsUpdate, ConnectionTestResult, defaultSettings } from '../contexts/SettingsContext';
 import { validateGeminiApiKey, fetchGeminiModels, getSecretsStatus, testConnectionWithConfig } from '../services/api';
 
+const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
+
 interface FormErrors {
   [key: string]: string;
 }
@@ -302,7 +304,7 @@ const Settings: React.FC = () => {
       } else {
         // Use backend endpoint to fetch models with saved settings
         try {
-          const response = await fetch(`${(import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'}/api/v1/ai/models`, {
+          const response = await fetch(`${API_BASE_URL}/api/v1/ai/models`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -655,7 +657,7 @@ const Settings: React.FC = () => {
         return result;
       } else {
         // No new token provided – test using existing configured settings on the backend
-        const response = await fetch(`${(import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'}/api/v1/settings/test-connection?service=jenkins`, {
+        const response = await fetch(`${API_BASE_URL}/api/v1/settings/test-connection?service=jenkins`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -698,7 +700,7 @@ const Settings: React.FC = () => {
         return result;
       } else {
         // Test with existing configured settings
-        const response = await fetch(`${(import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'}/api/v1/settings/test-connection?service=github`, {
+        const response = await fetch(`${API_BASE_URL}/api/v1/settings/test-connection?service=github`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -755,7 +757,7 @@ const Settings: React.FC = () => {
         };
 
         try {
-          const response = await fetch(`${(import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'}/api/v1/settings/test-connection-with-config`, {
+          const response = await fetch(`${API_BASE_URL}/api/v1/settings/test-connection-with-config`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -786,7 +788,7 @@ const Settings: React.FC = () => {
       } else {
         // Test with existing configured settings (use backend endpoint)
         try {
-          const response = await fetch(`${(import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'}/api/v1/settings/test-connection?service=ai`, {
+          const response = await fetch(`${API_BASE_URL}/api/v1/settings/test-connection?service=ai`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

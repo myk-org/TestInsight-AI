@@ -427,7 +427,9 @@ class TestAIModelsEndpoints:
             json={"api_key": ""},  # Empty body should not override
         )
         # Should use query parameter and not get a format validation error for empty string
-        assert response.status_code != 400 or "Invalid API key format" not in response.json().get("detail", "")
+        if response.status_code == 400:
+            assert "Invalid API key format" not in response.json().get("detail", "")
+        # Otherwise, should succeed with query parameter
 
 
 class TestSettingsEndpoints:
@@ -757,7 +759,9 @@ class TestEndpointValidation:
         )
         # Should use the body API key and attempt to validate it (might succeed or fail based on mock)
         # At minimum, shouldn't get a type validation error
-        assert response.status_code != 400 or "must be a string" not in response.json().get("detail", "")
+        if response.status_code == 400:
+            assert "must be a string" not in response.json().get("detail", "")
+        # Otherwise, should proceed with body API key validation
 
     def test_api_key_precedence_empty_string_body_uses_query(self, client):
         """Test that empty string body API key doesn't override valid query parameter."""
@@ -766,7 +770,9 @@ class TestEndpointValidation:
             json={"api_key": ""},  # Empty body should not override
         )
         # Should use query parameter and not get a format validation error for empty string
-        assert response.status_code != 400 or "Invalid API key format" not in response.json().get("detail", "")
+        if response.status_code == 400:
+            assert "Invalid API key format" not in response.json().get("detail", "")
+        # Otherwise, should succeed with query parameter
 
     def test_settings_update_invalid_data(self, client):
         """Test settings update with invalid data."""
