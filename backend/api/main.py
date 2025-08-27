@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from backend.api.routers import ai, analysis, git, jenkins, settings, system
+from backend.api.routers import ai, analysis, jenkins, settings, system
 
 # Create main API router
 router = APIRouter()
@@ -10,7 +10,6 @@ router = APIRouter()
 # Include all sub-routers
 router.include_router(analysis.router)
 router.include_router(jenkins.router)
-router.include_router(git.router)
 router.include_router(ai.router)
 router.include_router(settings.router)
 router.include_router(system.router)

@@ -31,7 +31,7 @@ AI-powered test failure analysis tool that helps developers quickly diagnose and
 
 ### User Experience
 - **Modern UI**: React with TypeScript and Tailwind CSS (Vite-based build)
-- **Dark/Light Theme**: Persistent theme preferences
+- **Dark/Light Theme**: Toggle theme switching with system preference detection
 - **Real-time Configuration**: Live settings updates with connection testing
 - **Responsive Design**: Works on desktop and mobile devices
 

@@ -1,5 +1,30 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 
+// Utility function to deep merge objects, treating null/undefined as missing
+const deepMerge = (target: any, source: any): any => {
+  if (source === null || source === undefined) {
+    return target;
+  }
+
+  if (target === null || target === undefined || typeof target !== 'object' || typeof source !== 'object') {
+    return source;
+  }
+
+  const result = { ...target };
+
+  for (const key in source) {
+    if (source.hasOwnProperty(key)) {
+      if (typeof source[key] === 'object' && source[key] !== null && !Array.isArray(source[key])) {
+        result[key] = deepMerge(target[key], source[key]);
+      } else {
+        result[key] = source[key];
+      }
+    }
+  }
+
+  return result;
+};
+
 // Types for settings data
 export interface JenkinsSettings {
   url?: string;
@@ -19,18 +44,10 @@ export interface AISettings {
   max_tokens: number;
 }
 
-export interface UserPreferences {
-  theme: string;
-  language: string;
-  auto_refresh: boolean;
-  results_per_page: number;
-}
-
 export interface AppSettings {
   jenkins: JenkinsSettings;
   github: GitHubSettings;
   ai: AISettings;
-  preferences: UserPreferences;
   last_updated?: string;
 }
 
@@ -38,7 +55,6 @@ export interface SettingsUpdate {
   jenkins?: Partial<JenkinsSettings>;
   github?: Partial<GitHubSettings>;
   ai?: Partial<AISettings>;
-  preferences?: Partial<UserPreferences>;
 }
 
 export interface ConnectionTestResult {
@@ -122,6 +138,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
       });
       const elapsed = Date.now() - startedAt;
       console.info('SettingsContext: GET /settings completed in', elapsed, 'ms, status=', response.status);
@@ -136,7 +153,8 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
       }
 
       const data = await response.json();
-      setSettings(data);
+      const mergedSettings = deepMerge(defaultSettings, data);
+      setSettings(mergedSettings);
     } catch (err: any) {
       const errorMessage = handleApiError(err);
       setError(errorMessage);
@@ -157,6 +175,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify(update),
       });
 
@@ -188,6 +207,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
       });
 
       if (!response.ok) {
@@ -215,6 +235,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
       });
 
       if (!response.ok) {
@@ -237,6 +258,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
       });
 
       if (!response.ok) {
@@ -262,8 +284,9 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
       const response = await fetch(`${API_BASE_URL}/api/v1/settings/backup`, {
         method: 'GET',
         headers: {
-          'Accept': 'application/json',
+          'Accept': 'application/octet-stream',
         },
+        credentials: 'include',
       });
 
       if (!response.ok) {
@@ -310,6 +333,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
 
       const response = await fetch(`${API_BASE_URL}/api/v1/settings/restore`, {
         method: 'POST',
+        credentials: 'include',
         body: formData,
       });
 
@@ -371,11 +395,5 @@ export const defaultSettings: AppSettings = {
     model: '',
     temperature: 0.7,
     max_tokens: 4096,
-  },
-  preferences: {
-    theme: 'system',
-    language: 'en',
-    auto_refresh: false,
-    results_per_page: 20,
   },
 };

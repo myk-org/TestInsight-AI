@@ -429,18 +429,10 @@ export interface AISettings {
   max_tokens: number;
 }
 
-export interface UserPreferences {
-  theme: string;
-  language: string;
-  auto_refresh: boolean;
-  results_per_page: number;
-}
-
 export interface AppSettings {
   jenkins: JenkinsSettings;
   github: GitHubSettings;
   ai: AISettings;
-  preferences: UserPreferences;
   last_updated?: string;
 }
 
@@ -448,7 +440,6 @@ export interface SettingsUpdate {
   jenkins?: JenkinsSettings;
   github?: GitHubSettings;
   ai?: AISettings;
-  preferences?: UserPreferences;
 }
 
 export interface ConnectionTestResult {

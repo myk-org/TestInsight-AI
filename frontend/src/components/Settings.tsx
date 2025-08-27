@@ -132,9 +132,6 @@ const Settings: React.FC = () => {
           gemini_api_key: '',
           // Keep model as provided in settings
           model: settings.ai.model || '',
-        },
-        preferences: {
-          ...settings.preferences,
         }
       };
       setFormData(validatedSettings);
@@ -502,7 +499,6 @@ const Settings: React.FC = () => {
         jenkins: formData.jenkins,
         github: formData.github,
         ai: formData.ai,
-        preferences: formData.preferences,
       };
 
       await updateSettings(update);
@@ -967,7 +963,7 @@ const Settings: React.FC = () => {
 
   // Track loading start time and stalled state
   useEffect(() => {
-    let timeoutId: NodeJS.Timeout | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     if (loading) {
       // Loading started - track start time and set stalled timer
@@ -1345,7 +1341,7 @@ const Settings: React.FC = () => {
                               <option value="">No models available</option>
                             )}
                             {modelsLoading && (
-                              <option value="gemini-pro">Loading models...</option>
+                              <option value="">Loading models...</option>
                             )}
                             {availableModels.map((model) => (
                               <option key={model.name} value={model.name}>

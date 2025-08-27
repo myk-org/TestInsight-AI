@@ -3,31 +3,26 @@
 import json
 from datetime import datetime
 from io import BytesIO
-from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
 
 from backend.models.schemas import (
+    AISettings,
     AppSettings,
     GeminiModelInfo,
     GeminiModelsResponse,
-    JenkinsSettings,
     GitHubSettings,
-    AISettings,
+    JenkinsSettings,
 )
-from backend.services.git_client import GitRepositoryError
 from backend.tests.conftest import (
     FAKE_GEMINI_API_KEY,  # gitleaks:allow
-    FAKE_GITHUB_REPO,
     FAKE_GITHUB_TOKEN,  # gitleaks:allow
     FAKE_INVALID_API_KEY,
     FAKE_INVALID_FORMAT_KEY,
     FAKE_JENKINS_TOKEN,  # gitleaks:allow
     FAKE_JENKINS_URL,
     FAKE_JENKINS_USERNAME,
-    FAKE_REPO_PATH,
-    FAKE_SHORT_COMMIT,
 )
 
 
@@ -184,69 +179,6 @@ class TestJenkinsEndpoints:
         assert response.status_code == 200
         data = response.json()
         assert data["limit"] == 5
-
-
-class TestGitEndpoints:
-    """Test Git-related endpoints."""
-
-    @patch("backend.api.routers.git.ServiceClientCreators")
-    def test_clone_repository_success(self, mock_service_config, client):
-        """Test successful repository cloning."""
-        mock_git_client = Mock()
-        mock_git_client.repo_path = Path(FAKE_REPO_PATH)
-        mock_service_config.return_value.create_configured_git_client.return_value = mock_git_client
-
-        response = client.post(
-            "/api/v1/git/clone",
-            data={
-                "repo_url": FAKE_GITHUB_REPO,
-                "branch": "main",
-                "github_token": FAKE_GITHUB_TOKEN,
-            },
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["success"] is True
-        assert data["repository_url"] == FAKE_GITHUB_REPO
-        assert data["branch"] == "main"
-        assert data["cloned_path"] == FAKE_REPO_PATH
-
-    @patch("backend.api.routers.git.ServiceClientCreators")
-    def test_clone_repository_with_commit(self, mock_service_config, client):
-        """Test repository cloning with commit hash."""
-        mock_git_client = Mock()
-        mock_git_client.repo_path = Path(FAKE_REPO_PATH)
-        mock_service_config.return_value.create_configured_git_client.return_value = mock_git_client
-
-        response = client.post(
-            "/api/v1/git/clone",
-            data={"repo_url": FAKE_GITHUB_REPO, "commit": FAKE_SHORT_COMMIT},
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["commit_hash"] == FAKE_SHORT_COMMIT
-
-    def test_clone_repository_branch_and_commit(self, client):
-        """Test repository cloning with both branch and commit (should fail)."""
-        response = client.post(
-            "/api/v1/git/clone",
-            data={"repo_url": FAKE_GITHUB_REPO, "branch": "main", "commit": FAKE_SHORT_COMMIT},
-        )
-
-        assert response.status_code == 500  # Due to generic exception handling
-        assert "Provide either branch or commit, not both" in response.json()["detail"]
-
-    @patch("backend.api.routers.git.ServiceClientCreators")
-    def test_clone_repository_git_error(self, mock_service_config, client):
-        """Test repository cloning with Git error."""
-        mock_service_config.return_value.create_configured_git_client.side_effect = GitRepositoryError("Git error")
-
-        response = client.post("/api/v1/git/clone", data={"repo_url": "invalid-url"})
-
-        assert response.status_code == 400
-        assert "Git error" in response.json()["detail"]
 
 
 class TestStatusEndpoint:
@@ -767,11 +699,6 @@ class TestEndpointValidation:
         response = client.get("/api/v1/jenkins/test-job/builds?limit=-1")
         assert response.status_code == 503  # Service unavailable because Jenkins not configured
 
-    def test_git_clone_missing_repo_url(self, client):
-        """Test git clone without repository URL."""
-        response = client.post("/api/v1/git/clone", data={})
-        assert response.status_code == 422  # Validation error
-
     def test_gemini_models_invalid_api_key_length(self, client):
         """Test Gemini models with invalid API key length (format validation)."""
         # Use a key with valid prefix but wrong length to test length validation
@@ -883,16 +810,6 @@ class TestEndpointErrorHandling:
 
         assert response.status_code == 500
         assert "Failed to get job builds" in response.json()["detail"]
-
-    @patch("backend.api.routers.git.ServiceClientCreators")
-    def test_git_clone_service_exception(self, mock_service_config, client):
-        """Test git clone endpoint with service exception."""
-        mock_service_config.return_value.create_configured_git_client.side_effect = Exception("Service error")
-
-        response = client.post("/api/v1/git/clone", data={"repo_url": FAKE_GITHUB_REPO})
-
-        assert response.status_code == 500
-        assert "Clone failed" in response.json()["detail"]
 
     @patch("backend.api.routers.ai.ServiceClientCreators")
     def test_gemini_models_service_exception(self, mock_service_client_creators, client):
