@@ -100,8 +100,9 @@ def _merge_and_validate_api_key(query_api_key: str | None, request_body: AIReque
 
     API Key Precedence (intentional design):
     1. Query parameter (?api_key=...) is used as default
-    2. Request body api_key field overrides query parameter when present
-    This follows REST API conventions where body parameters have higher precedence.
+    2. Request body api_key field overrides query parameter only when non-empty
+    This follows REST API conventions where body parameters have higher precedence,
+    but prevents empty body values from discarding valid query parameters.
 
     Args:
         query_api_key: API key from query parameter
@@ -113,10 +114,13 @@ def _merge_and_validate_api_key(query_api_key: str | None, request_body: AIReque
     Raises:
         HTTPException: If API key format is invalid (400 status)
     """
-    # Apply precedence rules: body overrides query parameter
+    # Apply precedence rules: body overrides query parameter only when non-empty
     api_key = query_api_key
     if request_body and request_body.api_key is not None:
-        api_key = request_body.api_key
+        # Only override if body api_key is non-empty after trimming
+        body_api_key = str(request_body.api_key).strip()
+        if body_api_key:
+            api_key = request_body.api_key
 
     if api_key is None:
         return None

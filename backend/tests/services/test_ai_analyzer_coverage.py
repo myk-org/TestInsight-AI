@@ -1,7 +1,8 @@
 """Tests for AI analyzer service coverage."""
 
+from io import BytesIO
 from pathlib import Path
-from unittest.mock import Mock, patch, mock_open
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -20,9 +21,13 @@ def test_extract_relevant_repository_files():
         mock_file_path.exists.return_value = True
         mock_file_path.is_file.return_value = True
 
-        # Mock the file.open() context manager correctly
-        mock_open_context = mock_open(read_data=b"content")
-        mock_file_path.open = mock_open_context
+        # Mock the file.open() context manager with BytesIO for binary operations
+        def mock_open_binary(*args, **kwargs):
+            if "rb" in args or (kwargs.get("mode") and "b" in kwargs["mode"]):
+                return BytesIO(b"content")
+            return BytesIO(b"content")
+
+        mock_file_path.open = mock_open_binary
 
         # Mock the chained resolve().relative_to() call
         mock_file_path.resolve.return_value.relative_to.return_value = Path("test_file.py")
