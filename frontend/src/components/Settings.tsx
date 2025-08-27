@@ -425,7 +425,7 @@ const Settings: React.FC = () => {
     if (!formData) return;
 
     setFormData(prev => {
-      if (!prev) return null;
+      if (!prev) return defaultSettings;
 
       const currentSection = prev[section] as Record<string, any>;
 
@@ -807,7 +807,7 @@ const Settings: React.FC = () => {
         const modelNames = modelsResult.models.map((model: any) => model.name);
         if (!modelNames.includes(aiConfig.model) && modelsResult.models.length > 0) {
           setFormData(prev => {
-            if (!prev) return null;
+            if (!prev) return defaultSettings;
             return {
               ...prev,
               ai: {
