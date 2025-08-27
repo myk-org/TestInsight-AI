@@ -40,8 +40,12 @@ ERROR_KEYWORD_MAPPING: dict[int, list[Union[str, re.Pattern[str]]]] = {
         "invalid-api-key",  # Hyphenated variant
         "authentication failed",
         "unauthorized",
-        "api key",
-        "api-key",  # Hyphenated variant
+        "api key invalid",
+        "api key not found",
+        "api key missing",
+        "api-key-invalid",  # Hyphenated variants
+        "api-key-not-found",
+        "api-key-missing",
         REGEX_AUTH,  # Precompiled pattern for word boundary matching
         "credential",
         "invalid credentials",  # Common authentication error phrase

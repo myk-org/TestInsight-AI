@@ -20,6 +20,7 @@ from backend.api.routers.constants import (
     INVALID_API_KEY_FORMAT,
     INTERNAL_SERVER_ERROR_FETCHING_MODELS,
     BAD_GATEWAY_UPSTREAM_SERVICE_ERROR,
+    SERVICE_UNAVAILABLE_ERROR,
 )
 from backend.tests.conftest import (
     FAKE_GEMINI_API_KEY,
@@ -328,6 +329,13 @@ class TestAIModelsEndpoints:
                 502,
                 BAD_GATEWAY_UPSTREAM_SERVICE_ERROR,
             ),
+            (
+                "unexpected server error",  # Generic error that shouldn't be classified
+                "internal processing failed",
+                FAKE_GEMINI_API_KEY,
+                502,
+                BAD_GATEWAY_UPSTREAM_SERVICE_ERROR,
+            ),
         ],
     )
     @patch("backend.api.routers.ai.ServiceClientCreators")
@@ -387,7 +395,7 @@ class TestAIModelsEndpoints:
                 FAKE_INVALID_API_KEY,
                 503,
                 None,  # No 'valid' field in error responses
-                "Service unavailable",
+                SERVICE_UNAVAILABLE_ERROR,
             ),
             (
                 TypeError("Non-string key"),  # TypeError for non-string keys
@@ -789,7 +797,7 @@ class TestEndpointValidation:
         data = response.json()
         # FastAPI validation errors return detail as a list
         assert isinstance(data["detail"], list)
-        error_msg = str(data["detail"]).lower()
+        error_msg = str(data["detail"])
         assert "string" in error_msg or "type" in error_msg
 
     def test_api_key_precedence_non_string_body_validation(self, client):
