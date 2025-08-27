@@ -21,11 +21,9 @@ def test_extract_relevant_repository_files():
         mock_file_path.exists.return_value = True
         mock_file_path.is_file.return_value = True
 
-        # Mock the file.open() context manager with explicit context manager behavior
-        mock_context_manager = Mock()
-        mock_context_manager.__enter__ = Mock(return_value=BytesIO(b"content"))
-        mock_context_manager.__exit__ = Mock(return_value=None)
-        mock_file_path.open = Mock(return_value=mock_context_manager)
+        # Mock the file.open() context manager with simplified approach
+        mock_file_path.open.return_value.__enter__ = Mock(return_value=BytesIO(b"content"))
+        mock_file_path.open.return_value.__exit__ = Mock(return_value=None)
 
         # Mock the chained resolve().relative_to() call
         mock_file_path.resolve.return_value.relative_to.return_value = Path("test_file.py")
@@ -59,6 +57,8 @@ def test_find_file_in_repo():
         mock_rglob.return_value = [mock_file]
         result = analyzer._find_file_in_repo(Path("/tmp/repo"), "test_file.py")
         assert result == mock_file
+        # Verify relative_to was called to check depth (guards the depth check path)
+        mock_file.relative_to.assert_called_once()
 
 
 def test_find_file_in_repo_priority_directory_fast_path():
@@ -113,43 +113,47 @@ def test_clean_content():
     assert result == "Clean content"
 
 
-def test_clean_content_fence_removal():
+@pytest.mark.parametrize(
+    "content,expected",
+    [
+        # Test markdown fence removal - JSON with language tag
+        (
+            """```json
+{"title": "Test", "description": "Test description"}
+```""",
+            '{"title": "Test", "description": "Test description"}',
+        ),
+        # Test markdown fence removal - uppercase JSON
+        (
+            """```JSON
+{"title": "Test", "description": "Test description"}
+```""",
+            '{"title": "Test", "description": "Test description"}',
+        ),
+        # Test markdown fence removal - no language tag
+        (
+            """```
+{"title": "Test", "description": "Test description"}
+```""",
+            '{"title": "Test", "description": "Test description"}',
+        ),
+        # Test markdown fence removal - with whitespace
+        (
+            """   ```json
+   {"title": "Test", "description": "Test description"}
+   ```   """,
+            '{"title": "Test", "description": "Test description"}',
+        ),
+        # Test content without fences (should only trim whitespace)
+        ("   Some regular content   ", "Some regular content"),
+    ],
+)
+def test_clean_content_fence_removal(content, expected):
     """Test _clean_content method fence removal according to contract."""
     mock_client = Mock(spec=GeminiClient)
     analyzer = AIAnalyzer(client=mock_client)
-
-    # Test markdown fence removal - JSON with language tag
-    fenced_json = """```json
-{"title": "Test", "description": "Test description"}
-```"""
-    result = analyzer._clean_content(fenced_json)
-    assert result == '{"title": "Test", "description": "Test description"}'
-
-    # Test markdown fence removal - uppercase JSON
-    fenced_json_upper = """```JSON
-{"title": "Test", "description": "Test description"}
-```"""
-    result = analyzer._clean_content(fenced_json_upper)
-    assert result == '{"title": "Test", "description": "Test description"}'
-
-    # Test markdown fence removal - no language tag
-    fenced_no_lang = """```
-{"title": "Test", "description": "Test description"}
-```"""
-    result = analyzer._clean_content(fenced_no_lang)
-    assert result == '{"title": "Test", "description": "Test description"}'
-
-    # Test markdown fence removal - with whitespace
-    fenced_whitespace = """   ```json
-   {"title": "Test", "description": "Test description"}
-   ```   """
-    result = analyzer._clean_content(fenced_whitespace)
-    assert result == '{"title": "Test", "description": "Test description"}'
-
-    # Test content without fences (should only trim whitespace)
-    no_fence = "   Some regular content   "
-    result = analyzer._clean_content(no_fence)
-    assert result == "Some regular content"
+    result = analyzer._clean_content(content)
+    assert result == expected
 
 
 def test_fallback_recommendations():
@@ -268,20 +272,22 @@ def test_format_insights_for_prompt_bullet_formatting():
     assert result.startswith("- ")  # Should start with bullet point
     assert "Memory Leak Detected (critical)" in result
 
-    # Test multiple insights for proper bullet formatting
-    mock_insight2 = Mock()
-    mock_insight2.title = "Performance Issue"
-    mock_insight2.severity = mock_severity
 
-    insights_multiple = [mock_insight, mock_insight2]
-    result_multiple = analyzer._format_insights_for_prompt(insights_multiple)
+def test_format_insights_for_prompt_string_severity():
+    """Test _format_insights_for_prompt method with string severity values."""
+    mock_client = Mock(spec=GeminiClient)
+    analyzer = AIAnalyzer(client=mock_client)
 
-    # Should have newline-separated bullet points
-    lines = result_multiple.split("\n")
-    assert len(lines) == 2
-    assert all(line.startswith("- ") for line in lines)
-    assert "Memory Leak Detected (critical)" in lines[0]
-    assert "Performance Issue (critical)" in lines[1]
+    # Create mock insight with string severity (no .value attribute)
+    mock_insight = Mock()
+    mock_insight.title = "Configuration Error"
+    mock_insight.severity = "medium"  # String severity instead of enum
+
+    insights = [mock_insight]
+    result = analyzer._format_insights_for_prompt(insights)
+
+    # Verify severity appears correctly for string values
+    assert "Configuration Error (medium)" in result
 
 
 def test_parse_json_response():

@@ -2,7 +2,7 @@
 
 import logging
 import re
-from typing import Pattern, Union
+from typing import Union
 
 from fastapi import APIRouter, HTTPException, Body
 
@@ -21,7 +21,7 @@ REGEX_RATE = re.compile(r"\brate\b")
 # Error keyword mapping for API error status code classification
 # Order matters: more specific errors should come first
 # Mix of literal strings and precompiled Pattern objects for clarity and performance
-ERROR_KEYWORD_MAPPING: dict[int, list[Union[str, Pattern[str]]]] = {
+ERROR_KEYWORD_MAPPING: dict[int, list[Union[str, re.Pattern[str]]]] = {
     401: [  # Authentication errors
         "invalid api key",
         "invalid-api-key",  # Hyphenated variant
@@ -106,7 +106,7 @@ def classify_error_status_code(error_message: str) -> int | None:
     for status_code, keywords in ERROR_KEYWORD_MAPPING.items():
         for keyword in keywords:
             # Handle precompiled Pattern objects
-            if isinstance(keyword, Pattern):
+            if isinstance(keyword, re.Pattern):
                 if keyword.search(error_lower):
                     return status_code
             # Handle regular substring matching for string literals
@@ -254,7 +254,7 @@ async def validate_gemini_api_key(
         # If we get here, the client was created successfully, which means the API key is valid
         return KeyValidationResponse(
             valid=True,
-            message="API key is valid and connection successful",
+            message="API key format is valid and client initialized successfully",
         )
 
     except HTTPException:
@@ -262,6 +262,10 @@ async def validate_gemini_api_key(
     except ValueError as e:
         # Handle ServiceConfig validation errors (no API key configured)
         raise HTTPException(status_code=400, detail=str(e))
+    except TypeError:
+        # Handle invalid API key type (same as models endpoint)
+        logger.error("TypeError in validate_gemini_api_key - invalid API key type")
+        raise HTTPException(status_code=400, detail="API key must be a string")
     except TimeoutError:
         # Map timeouts to 504 Gateway Timeout
         logger.error("Timeout error in validate_gemini_api_key - request exceeded time limit")

@@ -776,7 +776,9 @@ class AIAnalyzer:
 
         formatted = []
         for insight in insights:
-            formatted.append(f"- {insight.title} ({insight.severity.value})")
+            # Handle both enum severities (with .value) and string severities
+            severity_str = insight.severity.value if hasattr(insight.severity, "value") else str(insight.severity)
+            formatted.append(f"- {insight.title} ({severity_str})")
 
         return "\n".join(formatted)
 

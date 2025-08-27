@@ -431,7 +431,7 @@ class TestAIModelsEndpoints:
                 FAKE_GEMINI_API_KEY,
                 200,
                 True,
-                "API key is valid",
+                "API key format is valid and client initialized successfully",
             ),
             (
                 ConnectionError("Invalid API key"),  # ConnectionError means invalid key
@@ -791,8 +791,9 @@ class TestEndpointValidation:
         """Test Gemini models with whitespace-padded API key."""
         # Test whitespace handling - should be rejected by Gemini API
         response = client.post(
-            "/api/v1/ai/models", json={"api_key": "  AIzaSyFakeKeyExample1234567890123456789  "}
-        )  # gitleaks:allow
+            "/api/v1/ai/models",
+            json={"api_key": "  AIzaSyFakeKeyExample1234567890123456789  "},  # gitleaks:allow
+        )
         assert response.status_code == 400
         assert "Failed to validate authentication" in response.json()["detail"]
 
