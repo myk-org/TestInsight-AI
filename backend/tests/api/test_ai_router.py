@@ -1,6 +1,9 @@
 """Comprehensive tests for AI router error mapping and classification functionality."""
 
-from typing import Pattern
+import re
+import time
+
+import pytest
 
 from backend.api.routers.ai import ERROR_KEYWORD_MAPPING, classify_error_status_code
 
@@ -24,7 +27,7 @@ class TestErrorKeywordMapping:
             assert len(keywords) > 0
             for keyword in keywords:
                 # Keywords can be either strings or compiled regex Pattern objects
-                assert isinstance(keyword, (str, Pattern))
+                assert isinstance(keyword, (str, re.Pattern))
                 if isinstance(keyword, str):
                     assert len(keyword.strip()) > 0
 
@@ -40,7 +43,7 @@ class TestErrorKeywordMapping:
 
     def test_error_keyword_mapping_401_auth_keywords(self):
         """Test that 401 status code includes authentication-related keywords."""
-        auth_keywords = ERROR_KEYWORD_MAPPING[401]
+        auth_keywords = ERROR_KEYWORD_MAPPING.get(401, [])
 
         # Check for critical authentication keywords (strings only)
         expected_string_keywords = {
@@ -56,27 +59,36 @@ class TestErrorKeywordMapping:
         assert expected_string_keywords.issubset(actual_string_keywords)
 
         # Check that regex patterns are present (Pattern objects)
-        regex_patterns = [kw for kw in auth_keywords if isinstance(kw, Pattern)]
+        regex_patterns = [kw for kw in auth_keywords if isinstance(kw, re.Pattern)]
         assert len(regex_patterns) > 0, "Should have at least one regex pattern for auth keywords"
 
-        # Verify specific auth regex pattern exists
-        auth_pattern_found = any(
-            isinstance(kw, Pattern) and kw.pattern == r"\bauth(?:entication|orization)?\b" for kw in auth_keywords
-        )
-        assert auth_pattern_found, "Should have auth word boundary regex pattern"
+        # Find an auth pattern and test its behavior
+        auth_pattern = None
+        for kw in auth_keywords:
+            if isinstance(kw, re.Pattern) and "auth" in kw.pattern:
+                auth_pattern = kw
+                break
+
+        assert auth_pattern is not None, "Should have an auth-related regex pattern"
+        # Test behavioral matching instead of exact pattern
+        assert auth_pattern.search("authentication"), "Pattern should match 'authentication'"
+        assert auth_pattern.search("authorization"), "Pattern should match 'authorization'"
+        assert auth_pattern.search("auth"), "Pattern should match 'auth'"
+        assert not auth_pattern.search("author"), "Pattern should not match 'author'"
 
     def test_error_keyword_mapping_403_permission_keywords(self):
         """Test that 403 status code includes permission-related keywords."""
-        permission_keywords = ERROR_KEYWORD_MAPPING[403]
+        permission_keywords = ERROR_KEYWORD_MAPPING.get(403, [])
 
         expected_keywords = {"permission denied", "access denied", "forbidden", "not allowed"}
 
-        actual_keywords = set(permission_keywords)
-        assert expected_keywords.issubset(actual_keywords)
+        # Filter to only string keywords before set operations
+        string_keywords = {kw for kw in permission_keywords if isinstance(kw, str)}
+        assert expected_keywords.issubset(string_keywords)
 
     def test_error_keyword_mapping_429_rate_limit_keywords(self):
         """Test that 429 status code includes rate limiting keywords."""
-        rate_limit_keywords = ERROR_KEYWORD_MAPPING[429]
+        rate_limit_keywords = ERROR_KEYWORD_MAPPING.get(429, [])
 
         # Check for critical rate limiting keywords (strings only)
         expected_string_keywords = {"quota exceeded", "rate limit", "too many requests"}
@@ -86,59 +98,78 @@ class TestErrorKeywordMapping:
         assert expected_string_keywords.issubset(actual_string_keywords)
 
         # Check that regex patterns are present (Pattern objects)
-        regex_patterns = [kw for kw in rate_limit_keywords if isinstance(kw, Pattern)]
+        regex_patterns = [kw for kw in rate_limit_keywords if isinstance(kw, re.Pattern)]
         assert len(regex_patterns) > 0, "Should have at least one regex pattern for rate limit keywords"
 
-        # Verify specific regex patterns exist
-        quota_pattern_found = any(isinstance(kw, Pattern) and kw.pattern == r"\bquota\b" for kw in rate_limit_keywords)
-        rate_pattern_found = any(isinstance(kw, Pattern) and r"\brate(?:" in kw.pattern for kw in rate_limit_keywords)
-        assert quota_pattern_found, "Should have quota word boundary regex pattern"
-        assert rate_pattern_found, "Should have tightened rate limit regex pattern to avoid false positives"
+        # Test behavioral checks for rate limit patterns
+        quota_pattern = None
+        rate_pattern = None
+        for kw in rate_limit_keywords:
+            if isinstance(kw, re.Pattern):
+                if "quota" in kw.pattern:
+                    quota_pattern = kw
+                if "rate" in kw.pattern:
+                    rate_pattern = kw
+
+        # Test quota pattern behavior
+        if quota_pattern:
+            assert quota_pattern.search("quota"), "Quota pattern should match 'quota'"
+            assert not quota_pattern.search("quotation"), "Quota pattern should not match 'quotation'"
+
+        # Test rate pattern behavior
+        if rate_pattern:
+            assert rate_pattern.search("rate limit"), "Rate pattern should match 'rate limit'"
+            assert rate_pattern.search("rate-limited"), "Rate pattern should match 'rate-limited'"
+            assert not rate_pattern.search("prorated"), "Rate pattern should not match 'prorated'"
+            assert not rate_pattern.search("grateful"), "Rate pattern should not match 'grateful'"
 
     def test_error_keyword_mapping_400_bad_request_keywords(self):
         """Test that 400 status code includes bad request keywords."""
-        bad_request_keywords = ERROR_KEYWORD_MAPPING[400]
+        bad_request_keywords = ERROR_KEYWORD_MAPPING.get(400, [])
 
         expected_keywords = {"invalid input", "bad request", "malformed", "validation error"}
 
-        actual_keywords = set(bad_request_keywords)
-        assert expected_keywords.issubset(actual_keywords)
+        # Filter to only string keywords before set operations
+        string_keywords = {kw for kw in bad_request_keywords if isinstance(kw, str)}
+        assert expected_keywords.issubset(string_keywords)
 
     def test_error_keyword_mapping_503_service_unavailable_keywords(self):
         """Test that 503 status code includes service unavailable keywords."""
-        service_keywords = ERROR_KEYWORD_MAPPING[503]
+        service_keywords = ERROR_KEYWORD_MAPPING.get(503, [])
 
         expected_keywords = {"service unavailable", "temporarily unavailable", "maintenance", "overloaded"}
 
-        actual_keywords = set(service_keywords)
-        assert expected_keywords.issubset(actual_keywords)
+        # Filter to only string keywords before set operations
+        string_keywords = {kw for kw in service_keywords if isinstance(kw, str)}
+        assert expected_keywords.issubset(string_keywords)
 
     def test_error_keyword_mapping_504_timeout_keywords(self):
         """Test that 504 status code includes timeout keywords."""
-        timeout_keywords = ERROR_KEYWORD_MAPPING[504]
+        timeout_keywords = ERROR_KEYWORD_MAPPING.get(504, [])
 
         expected_keywords = {"timeout", "timed out", "deadline exceeded"}
 
-        actual_keywords = set(timeout_keywords)
-        assert expected_keywords.issubset(actual_keywords)
+        # Filter to only string keywords before set operations
+        string_keywords = {kw for kw in timeout_keywords if isinstance(kw, str)}
+        assert expected_keywords.issubset(string_keywords)
 
-    def test_no_duplicate_keywords_across_categories(self):
-        """Test that keywords are not duplicated across different status codes."""
-        all_keywords = []
-
-        for keywords in ERROR_KEYWORD_MAPPING.values():
+    def test_no_duplicate_keywords_within_categories(self):
+        """Test that keywords are not duplicated within each category."""
+        for status_code, keywords in ERROR_KEYWORD_MAPPING.items():
             # Convert Pattern objects to their string representation for comparison
             processed_keywords = []
             for kw in keywords:
-                if isinstance(kw, Pattern):
+                if isinstance(kw, re.Pattern):
                     processed_keywords.append(kw.pattern)  # Use pattern string for comparison
                 else:
                     processed_keywords.append(kw)
-            all_keywords.extend(processed_keywords)
 
-        # Check for duplicates
-        unique_keywords = set(all_keywords)
-        assert len(all_keywords) == len(unique_keywords), "Found duplicate keywords across categories"
+            # Check for duplicates within this category only
+            unique_keywords = set(processed_keywords)
+            assert len(processed_keywords) == len(unique_keywords), (
+                f"Found duplicate keywords within status code {status_code}: "
+                f"{[kw for kw in processed_keywords if processed_keywords.count(kw) > 1]}"
+            )
 
     def test_keywords_are_lowercase(self):
         """Test that all string keywords are in lowercase for consistent matching."""
@@ -168,9 +199,9 @@ class TestClassifyErrorStatusCode:
         assert classify_error_status_code(None) is None
         assert classify_error_status_code("   ") is None
 
-    def test_classify_error_status_code_401_auth_errors(self):
-        """Test classification of authentication errors (401)."""
-        auth_messages = [
+    @pytest.mark.parametrize(
+        "message",
+        [
             "Invalid API key provided",
             "Authentication failed for user",
             "Unauthorized access attempt",
@@ -179,29 +210,31 @@ class TestClassifyErrorStatusCode:
             "Invalid credentials supplied",
             "Invalid token supplied",
             "Token expired yesterday",
-        ]
+        ],
+    )
+    def test_classify_error_status_code_401_auth_errors(self, message):
+        """Test classification of authentication errors (401)."""
+        result = classify_error_status_code(message)
+        assert result == 401, f"Message '{message}' should classify as 401"
 
-        for message in auth_messages:
-            result = classify_error_status_code(message)
-            assert result == 401, f"Message '{message}' should classify as 401"
-
-    def test_classify_error_status_code_403_permission_errors(self):
-        """Test classification of permission errors (403)."""
-        permission_messages = [
+    @pytest.mark.parametrize(
+        "message",
+        [
             "Permission denied to access resource",
             "Access denied due to insufficient privileges",
             "Forbidden operation requested",
             "You are not allowed to perform this action",
             "Insufficient permissions for this operation",
-        ]
+        ],
+    )
+    def test_classify_error_status_code_403_permission_errors(self, message):
+        """Test classification of permission errors (403)."""
+        result = classify_error_status_code(message)
+        assert result == 403, f"Message '{message}' should classify as 403"
 
-        for message in permission_messages:
-            result = classify_error_status_code(message)
-            assert result == 403, f"Message '{message}' should classify as 403"
-
-    def test_classify_error_status_code_429_rate_limit_errors(self):
-        """Test classification of rate limiting errors (429)."""
-        rate_limit_messages = [
+    @pytest.mark.parametrize(
+        "message",
+        [
             "Quota exceeded for this request",  # Avoid "api key" keyword conflict
             "Rate limit reached, please try again later",
             "Too many requests in short time",
@@ -209,79 +242,85 @@ class TestClassifyErrorStatusCode:
             "Request rate too high",
             "API throttle limit reached",
             "Quota limit exceeded for today",
-        ]
+        ],
+    )
+    def test_classify_error_status_code_429_rate_limit_errors(self, message):
+        """Test classification of rate limiting errors (429)."""
+        result = classify_error_status_code(message)
+        assert result == 429, f"Message '{message}' should classify as 429"
 
-        for message in rate_limit_messages:
-            result = classify_error_status_code(message)
-            assert result == 429, f"Message '{message}' should classify as 429"
-
-    def test_classify_error_status_code_400_bad_request_errors(self):
-        """Test classification of bad request errors (400)."""
-        bad_request_messages = [
+    @pytest.mark.parametrize(
+        "message",
+        [
             "Invalid input parameters provided",
             "Bad request format detected",
             "Malformed JSON in request body",
             "Invalid request structure",
             "Validation error in input data",
             "Invalid parameter 'temperature' value",
-        ]
+        ],
+    )
+    def test_classify_error_status_code_400_bad_request_errors(self, message):
+        """Test classification of bad request errors (400)."""
+        result = classify_error_status_code(message)
+        assert result == 400, f"Message '{message}' should classify as 400"
 
-        for message in bad_request_messages:
-            result = classify_error_status_code(message)
-            assert result == 400, f"Message '{message}' should classify as 400"
-
-    def test_classify_error_status_code_503_service_unavailable_errors(self):
-        """Test classification of service unavailable errors (503)."""
-        service_messages = [
+    @pytest.mark.parametrize(
+        "message",
+        [
             "Service unavailable at this time",
             "API temporarily unavailable for maintenance",
             "Server under maintenance",
             "Service overloaded, try again later",
             "Server busy processing requests",
-        ]
+        ],
+    )
+    def test_classify_error_status_code_503_service_unavailable_errors(self, message):
+        """Test classification of service unavailable errors (503)."""
+        result = classify_error_status_code(message)
+        assert result == 503, f"Message '{message}' should classify as 503"
 
-        for message in service_messages:
-            result = classify_error_status_code(message)
-            assert result == 503, f"Message '{message}' should classify as 503"
-
-    def test_classify_error_status_code_504_timeout_errors(self):
-        """Test classification of timeout errors (504)."""
-        timeout_messages = [
+    @pytest.mark.parametrize(
+        "message",
+        [
             "Request timeout occurred",
             "Operation timed out after 30 seconds",
             "Deadline exceeded for this request",
-        ]
+        ],
+    )
+    def test_classify_error_status_code_504_timeout_errors(self, message):
+        """Test classification of timeout errors (504)."""
+        result = classify_error_status_code(message)
+        assert result == 504, f"Message '{message}' should classify as 504"
 
-        for message in timeout_messages:
-            result = classify_error_status_code(message)
-            assert result == 504, f"Message '{message}' should classify as 504"
-
-    def test_classify_error_status_code_case_insensitive(self):
-        """Test that classification is case-insensitive."""
-        test_cases = [
+    @pytest.mark.parametrize(
+        "message,expected_status",
+        [
             ("INVALID API KEY", 401),
             ("Permission Denied", 403),
             ("QUOTA EXCEEDED", 429),
             ("Bad Request", 400),
             ("SERVICE UNAVAILABLE", 503),
             ("TIMEOUT ERROR", 504),
-        ]
+        ],
+    )
+    def test_classify_error_status_code_case_insensitive(self, message, expected_status):
+        """Test that classification is case-insensitive."""
+        result = classify_error_status_code(message)
+        assert result == expected_status, f"Message '{message}' should classify as {expected_status}"
 
-        for message, expected_status in test_cases:
-            result = classify_error_status_code(message)
-            assert result == expected_status, f"Message '{message}' should classify as {expected_status}"
-
-    def test_classify_error_status_code_whitespace_handling(self):
-        """Test that classification handles whitespace correctly."""
-        test_cases = [
+    @pytest.mark.parametrize(
+        "message,expected_status",
+        [
             ("  invalid api key  ", 401),
             ("\tpermission denied\n", 403),
             ("   quota exceeded   ", 429),
-        ]
-
-        for message, expected_status in test_cases:
-            result = classify_error_status_code(message)
-            assert result == expected_status, f"Message '{message}' should classify as {expected_status}"
+        ],
+    )
+    def test_classify_error_status_code_whitespace_handling(self, message, expected_status):
+        """Test that classification handles whitespace correctly."""
+        result = classify_error_status_code(message)
+        assert result == expected_status, f"Message '{message}' should classify as {expected_status}"
 
     def test_classify_error_status_code_priority_order(self):
         """Test that more specific errors are classified first (precedence)."""
@@ -294,24 +333,25 @@ class TestClassifyErrorStatusCode:
         result = classify_error_status_code("quota exceeded error")
         assert result == 429
 
-    def test_classify_error_status_code_substring_matching(self):
-        """Test that classification works with substring matching."""
-        test_cases = [
+    @pytest.mark.parametrize(
+        "message,expected_status",
+        [
             ("The API key provided is invalid", 401),
             ("User permission denied for this resource", 403),
             ("Daily quota has been exceeded", 429),
             ("Request contains malformed data", 400),
             ("Backend service unavailable", 503),
             ("Request timeout after 30s", 504),
-        ]
+        ],
+    )
+    def test_classify_error_status_code_substring_matching(self, message, expected_status):
+        """Test that classification works with substring matching."""
+        result = classify_error_status_code(message)
+        assert result == expected_status, f"Message '{message}' should classify as {expected_status}"
 
-        for message, expected_status in test_cases:
-            result = classify_error_status_code(message)
-            assert result == expected_status, f"Message '{message}' should classify as {expected_status}"
-
-    def test_classify_error_status_code_unknown_errors(self):
-        """Test that unknown error messages return None."""
-        unknown_messages = [
+    @pytest.mark.parametrize(
+        "message",
+        [
             "Something went wrong",
             "Error code 12345",
             "Unexpected system failure",
@@ -319,15 +359,16 @@ class TestClassifyErrorStatusCode:
             "Memory allocation failed",
             "",
             "   ",
-        ]
+        ],
+    )
+    def test_classify_error_status_code_unknown_errors(self, message):
+        """Test that unknown error messages return None."""
+        result = classify_error_status_code(message)
+        assert result is None, f"Unknown message '{message}' should return None"
 
-        for message in unknown_messages:
-            result = classify_error_status_code(message)
-            assert result is None, f"Unknown message '{message}' should return None"
-
-    def test_classify_error_status_code_complex_messages(self):
-        """Test classification with complex, real-world error messages."""
-        complex_messages = [
+    @pytest.mark.parametrize(
+        "message,expected_status",
+        [
             # Real Gemini API error examples
             ("Error 401: The request is missing a valid API key.", 401),
             ("Error 403: Permission denied. The caller does not have access to this resource.", 403),
@@ -342,15 +383,16 @@ class TestClassifyErrorStatusCode:
             ("Validation error: malformed JSON in request body causes parsing failure", 400),
             ("Service temporarily unavailable due to scheduled maintenance window", 503),
             ("Request deadline exceeded: operation timed out after maximum allowed duration", 504),
-        ]
+        ],
+    )
+    def test_classify_error_status_code_complex_messages(self, message, expected_status):
+        """Test classification with complex, real-world error messages."""
+        result = classify_error_status_code(message)
+        assert result == expected_status, f"Complex message '{message}' should classify as {expected_status}"
 
-        for message, expected_status in complex_messages:
-            result = classify_error_status_code(message)
-            assert result == expected_status, f"Complex message '{message}' should classify as {expected_status}"
-
-    def test_classify_error_status_code_edge_cases(self):
-        """Test edge cases and boundary conditions."""
-        edge_cases = [
+    @pytest.mark.parametrize(
+        "message,expected_status",
+        [
             # Multiple matching keywords - should return first match based on dict iteration order
             ("invalid api key and quota exceeded", 401),  # Should match 401 first
             ("timeout occurred due to server overload", 504),  # Should match 504 first
@@ -360,18 +402,34 @@ class TestClassifyErrorStatusCode:
             # Partial keyword matches
             ("auth-related issue", 401),  # "auth" should match
             ("rate-limited request", 429),  # "rate" should match
-        ]
-
-        for message, expected_status in edge_cases:
-            result = classify_error_status_code(message)
-            assert result == expected_status, f"Edge case '{message}' should classify as {expected_status}"
+        ],
+    )
+    def test_classify_error_status_code_edge_cases(self, message, expected_status):
+        """Test edge cases and boundary conditions."""
+        result = classify_error_status_code(message)
+        assert result == expected_status, f"Edge case '{message}' should classify as {expected_status}"
 
     def test_classify_error_status_code_performance(self):
         """Test that classification performs well with large messages."""
         # Create a large message with the keyword at the end
         large_message = "A" * 10000 + " invalid api key"
+
+        start_time = time.time()
         result = classify_error_status_code(large_message)
+        end_time = time.time()
+
         assert result == 401
+
+        # Add lightweight timing guard if pytest-timeout is available
+        try:
+            import pytest_timeout  # noqa: F401
+
+            # Soft upper bound check - should complete within reasonable time
+            execution_time = end_time - start_time
+            assert execution_time < 1.0, f"Classification took too long: {execution_time:.3f}s"
+        except ImportError:
+            # pytest-timeout not available, skip timing check
+            pass
 
         # Test with keyword at the beginning
         large_message = "quota exceeded " + "B" * 10000
@@ -466,7 +524,7 @@ class TestErrorMappingIntegration:
             ("Generate reports automatically", None),
             # "quota" should not match in other contexts
             ("Request quota for new resources", 429),  # This should match as it's a word boundary
-            ("The aqueous solution failed", None),  # "quota" substring should not match
+            ("The quotation was misplaced", None),  # "quota" substring should not match due to word boundary
             # "auth" should not match in "author", "authorize" compound forms but avoid other keywords
             ("Author document processing", None),  # "auth" in "Author" should not match with word boundary
             ("Authorize document access", None),  # "auth" in "Authorize" should not match

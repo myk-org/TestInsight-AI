@@ -44,12 +44,69 @@ app = FastAPI(
 )
 
 # Configure CORS via environment-driven allowlist (registered after error middleware below)
-# Default to localhost origins for development to support credentials
-default_origins = "http://localhost:3000,http://127.0.0.1:3000"
+# Default to localhost origins for development (including HTTPS) to support credentials
+default_origins = "http://localhost:3000,http://127.0.0.1:3000,https://localhost:3000,https://127.0.0.1:3000"
 cors_origins_env = os.getenv("CORS_ALLOWED_ORIGINS", default_origins)
-allow_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()] if cors_origins_env else ["*"]
-allow_credentials_env = os.getenv("CORS_ALLOW_CREDENTIALS", "true").lower() == "true"
-allow_credentials = allow_credentials_env and allow_origins != ["*"]
+
+
+def normalize_cors_origins(origins_str: str) -> list[str]:
+    """
+    Parse, deduplicate, and normalize CORS origins while preserving order.
+
+    Args:
+        origins_str: Comma-separated origins string
+
+    Returns:
+        List of normalized, deduplicated origins
+    """
+    if not origins_str:
+        return ["*"]
+
+    origins = [o.strip() for o in origins_str.split(",") if o.strip()]
+    if not origins:
+        return ["*"]
+
+    # Deduplicate while preserving order
+    seen = set()
+    normalized_origins = []
+    for origin in origins:
+        # Normalize by removing trailing slashes
+        normalized = origin.rstrip("/")
+        if normalized not in seen:
+            seen.add(normalized)
+            normalized_origins.append(normalized)
+
+    return normalized_origins
+
+
+def parse_boolean_env(env_value: str, default: bool = False) -> bool:
+    """
+    Parse boolean environment variable with support for various truthy values.
+
+    Args:
+        env_value: Environment variable value
+        default: Default value if parsing fails
+
+    Returns:
+        Parsed boolean value
+    """
+    if not env_value:
+        return default
+
+    # Support various truthy values: true, yes, 1, on
+    return env_value.lower() in ("true", "yes", "1", "on")
+
+
+allow_origins = normalize_cors_origins(cors_origins_env)
+allow_credentials_env = os.getenv("CORS_ALLOW_CREDENTIALS", "true")
+allow_credentials = parse_boolean_env(allow_credentials_env, True)
+
+# Security: Wildcard origins cannot use credentials
+if allow_origins == ["*"] and allow_credentials:
+    logging.getLogger("testinsight").warning(
+        "CORS credentials disabled due to wildcard origin (*). Specify explicit origins to enable credentials."
+    )
+    allow_credentials = False
 
 
 # Optional global error handler (env gated) while preserving default FastAPI behavior otherwise

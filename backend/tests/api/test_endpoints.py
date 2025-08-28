@@ -235,24 +235,34 @@ class TestStatusEndpoint:
         assert data["services"]["jenkins"]["configured"] is True
         assert data["services"]["jenkins"]["available"] is True
 
+    @patch("backend.api.routers.system.BaseServiceConfig")
+    @patch("backend.api.routers.system.ServiceClientCreators")
     @patch("backend.api.routers.system.ServiceStatusCheckers")
-    def test_get_service_status_jenkins_unavailable(self, mock_service_config, client):
+    def test_get_service_status_jenkins_unavailable(
+        self, mock_status_checkers, mock_client_creators, mock_base_config, client
+    ):
         """Test service status when Jenkins is unavailable."""
-        mock_service_config_instance = Mock()
-        mock_service_config.return_value = mock_service_config_instance
-
-        mock_service_config_instance.get_service_status.return_value = {
+        # Mock status checkers
+        mock_status_instance = Mock()
+        mock_status_checkers.return_value = mock_status_instance
+        mock_status_instance.get_service_status.return_value = {
             "jenkins": {"configured": False},
             "github": {"configured": False},
             "ai": {"configured": False},
         }
 
-        mock_service_config_instance.create_configured_jenkins_client.return_value = None
-        mock_service_config_instance.create_configured_ai_client.side_effect = Exception("AI error")
+        # Mock client creators
+        mock_creators_instance = Mock()
+        mock_client_creators.return_value = mock_creators_instance
+        mock_creators_instance.create_configured_jenkins_client.return_value = None
+        mock_creators_instance.create_configured_ai_client.side_effect = Exception("AI error")
 
+        # Mock base config
+        mock_base_instance = Mock()
+        mock_base_config.return_value = mock_base_instance
         mock_settings = Mock()
         mock_settings.last_updated = None
-        mock_service_config_instance.get_settings.return_value = mock_settings
+        mock_base_instance.get_settings.return_value = mock_settings
 
         response = client.get("/api/v1/status")
 
@@ -381,6 +391,9 @@ class TestAIModelsEndpoints:
         assert "message" not in error_response
         assert expected_detail_contains in error_response["detail"]
 
+        # Verify the creator is invoked with the passed api_key for completeness
+        mock_creators_instance.create_configured_ai_client.assert_called_once_with(api_key=api_key)
+
     @pytest.mark.parametrize(
         "client_side_effect,api_key,expected_status,expected_valid,expected_detail_contains",
         [
@@ -452,8 +465,8 @@ class TestAIModelsEndpoints:
         # Assert which key was used to ensure precedence and plumbing are correct
         if expected_status == 200:
             mock_creators_instance.create_configured_ai_client.assert_called_once_with(api_key=api_key)
-        elif not client_side_effect:
-            # For non-200 responses without side effects, the client creation should still be attempted
+        else:
+            # For error responses, verify the creator is invoked with the passed api_key for completeness
             mock_creators_instance.create_configured_ai_client.assert_called_once_with(api_key=api_key)
 
     def test_validate_key_precedence_non_string_body_validation(self, client):
@@ -685,7 +698,7 @@ class TestSettingsEndpoints:
         response = client.get("/api/v1/settings/backup")
 
         assert response.status_code == 200
-        assert response.headers["content-type"] == "application/json"
+        assert response.headers["content-type"].startswith("application/json")
         assert "attachment" in response.headers.get("content-disposition", "")
 
     @patch("backend.api.routers.settings.SettingsService")
@@ -753,9 +766,11 @@ class TestEndpointValidation:
 
     def test_analyze_empty_text(self, client):
         """Test analyze endpoint with empty text."""
+        # The endpoint validates and rejects empty text deterministically
         response = client.post("/api/v1/analyze", data={"text": ""})
-        # Should pass validation but might fail in processing
-        assert response.status_code in [200, 500, 503]
+        # Should return error for empty text
+        assert response.status_code == 500
+        assert "Text content is empty" in response.json()["detail"]
 
     def test_jenkins_builds_invalid_limit(self, client):
         """Test Jenkins builds with invalid limit parameter."""
