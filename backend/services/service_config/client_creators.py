@@ -1,5 +1,8 @@
 """Service client creators for TestInsight AI."""
 
+import re
+from urllib.parse import urlparse
+
 from backend.services.ai_analyzer import AIAnalyzer
 from backend.services.gemini_api import GeminiClient
 from backend.services.git_client import GitClient
@@ -129,6 +132,13 @@ class ServiceClientCreators(BaseServiceConfig):
         """
         if not repo_url:
             raise ValueError("repo_url is required for GitClient")
+
+        # Allow only https://, ssh:// or scp-like git URLs (user@host:path)
+        p = urlparse(repo_url)
+        is_http_ssh = bool(p.scheme in ("https", "ssh") and p.netloc)
+        is_scp_like = re.match(r"^[^@\s]+@[^:\s]+:.+$", repo_url) is not None
+        if not (is_http_ssh or is_scp_like):
+            raise ValueError("Invalid repository URL; only https://, ssh://, or scp-like formats allowed.")
 
         # Prefer provided args over config
         getters = ServiceConfigGetters()
