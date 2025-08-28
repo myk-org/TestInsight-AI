@@ -79,10 +79,51 @@ def normalize_cors_origins(origins_str: str) -> list[str]:
     for origin in origins:
         # Parse and validate strict "origin" (scheme://host[:port]) — no path, query, or userinfo
         parts = urlsplit(origin.rstrip("/"))
-        if not parts.scheme or not parts.netloc or parts.path or parts.query or parts.username:
-            # Skip invalid entries rather than silently accepting
+
+        # Require http/https scheme
+        if parts.scheme not in ("http", "https"):
             continue
-        normalized = f"{parts.scheme}://{parts.hostname}{f':{parts.port}' if parts.port else ''}"
+
+        # Special handling for IPv6 addresses without brackets
+        # If hostname is None but netloc contains multiple colons, it might be an unbracketed IPv6
+        if not parts.hostname and parts.netloc and parts.netloc.count(":") > 1:
+            # Try to separate IPv6 address from port
+            try:
+                netloc = parts.netloc
+                last_colon = netloc.rfind(":")
+                potential_ipv6 = netloc[:last_colon]
+                potential_port = netloc[last_colon + 1 :]
+
+                # Check if the last part after colon is a valid port number
+                if potential_port.isdigit():
+                    # Reconstruct with properly bracketed IPv6
+                    bracketed_origin = origin.replace(f"://{netloc}", f"://[{potential_ipv6}]:{potential_port}")
+                else:
+                    # No port, bracket the entire address
+                    bracketed_origin = origin.replace(f"://{netloc}", f"://[{netloc}]")
+
+                parts = urlsplit(bracketed_origin.rstrip("/"))
+            except Exception:
+                continue
+
+        # Require truthy hostname (not None, empty, or "None"/"none" string)
+        if not parts.hostname or parts.hostname.lower() == "none":
+            continue
+
+        # Reject any userinfo (username or password)
+        if parts.username or parts.password:
+            continue
+
+        # Reject paths or query parameters
+        if parts.path or parts.query:
+            continue
+
+        # Handle IPv6 literals - ensure they have brackets
+        hostname = parts.hostname
+        if ":" in hostname and not (hostname.startswith("[") and hostname.endswith("]")):
+            hostname = f"[{hostname}]"
+
+        normalized = f"{parts.scheme}://{hostname}{f':{parts.port}' if parts.port else ''}"
         if normalized not in seen:
             seen.add(normalized)
             normalized_origins.append(normalized)

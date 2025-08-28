@@ -96,8 +96,27 @@ def _redact_repo_url(url: str | None) -> str | None:
     return _redact_text(url)
 
 
+def _sanitize_filename_for_header(name: str) -> str:
+    """Sanitize filename for safe inclusion in text headers.
+
+    Removes control characters and newlines that could cause header injection
+    or formatting issues, and caps length to prevent excessive output.
+
+    Args:
+        name: Original filename
+
+    Returns:
+        Sanitized filename safe for headers
+    """
+    # Remove control chars/newlines and cap length
+    return re.sub(r"[\r\n\t]+", " ", name)[:256]
+
+
 def _truncate_text_safely(text: str, max_size: int = MAX_COMBINED_TEXT_SIZE) -> tuple[str, bool]:
     """Truncate text to maximum size with note if truncated.
+
+    Guarantees the returned text bytes never exceed max_size by reserving
+    space for the truncation note before cutting the original text.
 
     Args:
         text: Text to potentially truncate
@@ -110,8 +129,34 @@ def _truncate_text_safely(text: str, max_size: int = MAX_COMBINED_TEXT_SIZE) -> 
     if len(text_bytes) <= max_size:
         return text, False
 
-    # Truncate to approximately max_size, ensuring we don't break UTF-8 encoding
-    truncated_bytes = text_bytes[:max_size]
+    # Calculate truncation note and its byte length
+    truncation_note = f"\n\n[NOTE: Text was truncated to {max_size // (1024 * 1024)}MB due to size limits]"
+    note_bytes_len = len(truncation_note.encode("utf-8"))
+
+    # If the note itself is larger than max_size, use a shorter note
+    if note_bytes_len >= max_size:
+        truncation_note = "\n\n[NOTE: Text truncated]"
+        note_bytes_len = len(truncation_note.encode("utf-8"))
+
+        # If even the short note is too large, return just the truncated content
+        if note_bytes_len >= max_size:
+            truncated_bytes = text_bytes[:max_size]
+            try:
+                return truncated_bytes.decode("utf-8"), True
+            except UnicodeDecodeError:
+                # Find the last complete UTF-8 sequence
+                while len(truncated_bytes) > 0:
+                    try:
+                        return truncated_bytes.decode("utf-8"), True
+                    except UnicodeDecodeError:
+                        truncated_bytes = truncated_bytes[:-1]
+                return "", True
+
+    # Calculate allowed content byte length (ensure it's >= 0)
+    allowed_content_bytes = max(0, max_size - note_bytes_len)
+
+    # Truncate to allowed content length, ensuring we don't break UTF-8 encoding
+    truncated_bytes = text_bytes[:allowed_content_bytes]
     try:
         truncated_text = truncated_bytes.decode("utf-8")
     except UnicodeDecodeError:
@@ -125,7 +170,6 @@ def _truncate_text_safely(text: str, max_size: int = MAX_COMBINED_TEXT_SIZE) -> 
         else:
             truncated_text = ""
 
-    truncation_note = f"\n\n[NOTE: Text was truncated to {max_size // (1024 * 1024)}MB due to size limits]"
     return truncated_text + truncation_note, True
 
 
@@ -314,7 +358,8 @@ async def analyze_file(
                 file_text = content.decode("utf-8")
                 if file_text.strip():
                     has_non_empty_content = True
-                combined_text += f"\n\n=== {file.filename} ===\n{file_text}"
+                safe_name = _sanitize_filename_for_header(file.filename)
+                combined_text += f"\n\n=== {safe_name} ===\n{file_text}"
             except UnicodeDecodeError:
                 raise HTTPException(
                     status_code=400,

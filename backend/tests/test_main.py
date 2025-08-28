@@ -204,6 +204,63 @@ class TestCORSConfiguration:
         result = normalize_cors_origins(origins_with_wildcard_end)
         assert result == ["*"]
 
+    def test_normalize_cors_origins_ipv6_handling(self):
+        """Test IPv6 origin handling with proper bracket wrapping."""
+        # IPv6 literal with brackets should be preserved
+        origins_with_ipv6 = "http://[::1]:3000,https://localhost:3000"
+        result = normalize_cors_origins(origins_with_ipv6)
+        expected = ["http://[::1]:3000", "https://localhost:3000"]
+        assert result == expected
+
+        # IPv6 literal without brackets should get brackets added
+        origins_ipv6_no_brackets = "http://::1:3000,https://example.com"
+        result = normalize_cors_origins(origins_ipv6_no_brackets)
+        expected = ["http://[::1]:3000", "https://example.com"]
+        assert result == expected
+
+        # Mixed IPv6 and regular origins with deduplication
+        origins_mixed = "http://[::1]:3000,https://localhost:3000,http://[::1]:3000/"
+        result = normalize_cors_origins(origins_mixed)
+        expected = ["http://[::1]:3000", "https://localhost:3000"]
+        assert result == expected
+
+    def test_normalize_cors_origins_malformed_filtering(self):
+        """Test that malformed, hostless, and userinfo origins are filtered out."""
+        # Test hostless origins (no hostname)
+        hostless_origins = "http://,https://,:8080,http://localhost:3000"
+        result = normalize_cors_origins(hostless_origins)
+        expected = ["http://localhost:3000"]
+        assert result == expected
+
+        # Test userinfo-only entries (username/password)
+        userinfo_origins = "http://user:pass@example.com,https://user@example.com,http://localhost:3000"
+        result = normalize_cors_origins(userinfo_origins)
+        expected = ["http://localhost:3000"]
+        assert result == expected
+
+        # Test invalid schemes
+        invalid_schemes = "ftp://example.com,ws://example.com,http://localhost:3000"
+        result = normalize_cors_origins(invalid_schemes)
+        expected = ["http://localhost:3000"]
+        assert result == expected
+
+        # Test origins with paths/queries (should be filtered)
+        with_paths = "http://example.com/path,http://example.com?query=1,http://localhost:3000"
+        result = normalize_cors_origins(with_paths)
+        expected = ["http://localhost:3000"]
+        assert result == expected
+
+        # Test hostname "None" string (should be filtered)
+        none_hostname = "http://None:3000,https://localhost:3000"
+        result = normalize_cors_origins(none_hostname)
+        expected = ["https://localhost:3000"]
+        assert result == expected
+
+        # Test completely invalid entries return empty list
+        all_invalid = "ftp://example.com,invalid-url,user:pass@,::invalid"
+        result = normalize_cors_origins(all_invalid)
+        assert result == []
+
     def test_cors_middleware_idempotency(self):
         """Test that calling setup_cors_middleware twice results in single CORSMiddleware."""
         from backend.main import setup_cors_middleware
