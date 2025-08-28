@@ -104,9 +104,14 @@ class TestCORSConfiguration:
 
     def test_parse_boolean_env_false_variants(self):
         """Test various falsy values for boolean parsing."""
-        falsy_values = ["false", "False", "FALSE", "no", "NO", "0", "off", "OFF", "invalid"]
+        falsy_values = ["false", "False", "FALSE", "no", "NO", "0", "off", "OFF"]
         for value in falsy_values:
             assert parse_boolean_env(value) is False
+
+    def test_parse_boolean_env_unrecognized_uses_default(self):
+        """Test that unrecognized tokens fall back to default."""
+        assert parse_boolean_env("invalid", False) is False
+        assert parse_boolean_env("invalid", True) is True
 
     def test_parse_boolean_env_whitespace_variants(self):
         """Test boolean parsing with common real-world whitespace scenarios."""
@@ -214,10 +219,12 @@ class TestCORSConfiguration:
         ):
             setup_cors_middleware(test_app)
             initial_middleware_count = len(test_app.user_middleware)
+            assert test_app.middleware_stack is not None
 
             # Call it again
             setup_cors_middleware(test_app)
             final_middleware_count = len(test_app.user_middleware)
+            assert test_app.middleware_stack is not None
 
             # Should still have the same number of middleware (old one removed, new one added)
             assert initial_middleware_count == final_middleware_count

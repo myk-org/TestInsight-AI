@@ -42,6 +42,8 @@ def _redact_text(text: str | None) -> str | None:
     - git@github.com:user/repo.git -> ***@github.com:user/repo.git
     - API keys, passwords, tokens in quoted strings
     - Database connection strings
+    - URL query parameters: ?token=abc123 -> ?token=***
+    - Authorization headers: Authorization: Bearer abc123 -> Authorization: Bearer ***
 
     Args:
         text: Text to redact (can be None or non-string)
@@ -71,6 +73,15 @@ def _redact_text(text: str | None) -> str | None:
         redacted = re.sub(r"(with\s+token|token[:=])\s+([A-Za-z0-9_-]{6,})", r"\1 ***", redacted, flags=re.IGNORECASE)
         # Database connection strings with passwords
         redacted = re.sub(r"://([^:/]+):([^@/]+)@", r"://\1:***@", redacted)
+
+        # Redact common query parameters with sensitive values
+        redacted = re.sub(
+            r"(?i)([?&])(token|access_token|api_key|api-key|key|secret|password)=[^&\s]+", r"\1\2=***", redacted
+        )
+
+        # Redact Authorization headers and Bearer tokens
+        redacted = re.sub(r"(?i)authorization:\s*bearer\s+[A-Za-z0-9\-_\.]+", "Authorization: Bearer ***", redacted)
+        redacted = re.sub(r"(?i)\bBearer\s+[A-Za-z0-9\-_\.]+", "Bearer ***", redacted)
 
         return redacted
     except Exception:
@@ -276,7 +287,7 @@ async def analyze_file(
         # Validate file types
         for file in files:
             if not file.filename:
-                raise HTTPException(status_code=400, detail="File must have a filename")
+                raise HTTPException(status_code=422, detail="File must have a filename")
 
             # Get file extension
             file_ext = Path(file.filename).suffix.lower()

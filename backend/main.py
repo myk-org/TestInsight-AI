@@ -51,15 +51,18 @@ def normalize_cors_origins(origins_str: str) -> list[str]:
     """
     Parse, deduplicate, and normalize CORS origins while preserving order.
     Short-circuits for wildcard origins to maintain security semantics.
+    Validates origins strictly to reject paths, credentials, and malformed URLs.
 
     Args:
         origins_str: Comma-separated origins string
 
     Returns:
-        List of normalized, deduplicated origins
+        List of normalized, deduplicated origins (invalid entries are skipped)
     """
     if not origins_str:
         return []  # Empty string means deny all, not wildcard
+
+    from urllib.parse import urlsplit
 
     origins = [o.strip() for o in origins_str.split(",") if o.strip()]
     if not origins:
@@ -70,12 +73,16 @@ def normalize_cors_origins(origins_str: str) -> list[str]:
         if origin.strip() == "*":
             return ["*"]
 
-    # Deduplicate while preserving order
+    # Deduplicate while preserving order with strict origin validation
     seen = set()
     normalized_origins = []
     for origin in origins:
-        # Normalize by removing trailing slashes
-        normalized = origin.rstrip("/")
+        # Parse and validate strict "origin" (scheme://host[:port]) — no path, query, or userinfo
+        parts = urlsplit(origin.rstrip("/"))
+        if not parts.scheme or not parts.netloc or parts.path or parts.query or parts.username:
+            # Skip invalid entries rather than silently accepting
+            continue
+        normalized = f"{parts.scheme}://{parts.hostname}{f':{parts.port}' if parts.port else ''}"
         if normalized not in seen:
             seen.add(normalized)
             normalized_origins.append(normalized)
@@ -93,7 +100,7 @@ def parse_boolean_env(env_value: str | None, default: bool = False) -> bool:
         default: Default value if env_value is None, empty, or unrecognized
 
     Returns:
-        Parsed boolean value
+        Parsed boolean value. Falls back to `default` for None/empty/unrecognized tokens.
     """
     if not env_value:
         return default
@@ -154,6 +161,9 @@ def setup_cors_middleware(app: FastAPI) -> None:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Rebuild stack explicitly to ensure idempotent, up-to-date middleware chain
+    app.middleware_stack = app.build_middleware_stack()
 
 
 # Optional global error handler (env gated) while preserving default FastAPI behavior otherwise
