@@ -123,6 +123,16 @@ def test_analyze_secret_leak_prevention(client: TestClient):
             # Should have redacted URL
             assert "***" in warning_call_args[1]  # The redacted URL parameter
 
+            # Ensure secrets are not present in any logged args
+            all_args_str = " ".join(map(str, mock_logger.warning.call_args[0]))
+            assert "token123" not in all_args_str
+            assert "secret456" not in all_args_str
+
+            # Ensure secrets are not surfaced back to the client
+            summary = response.json()["summary"]
+            assert "token123" not in summary
+            assert "secret456" not in summary
+
 
 def test_analyze_repo_limits_validation(client: TestClient):
     """Test 422 responses for invalid repo limit bounds across endpoints."""

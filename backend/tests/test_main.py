@@ -92,9 +92,9 @@ class TestCORSConfiguration:
         assert result == expected
 
     def test_normalize_cors_origins_empty_string(self):
-        """Test empty string returns wildcard."""
+        """Test empty string returns empty list (deny all), not wildcard."""
         result = normalize_cors_origins("")
-        assert result == ["*"]
+        assert result == []
 
     def test_parse_boolean_env_true_variants(self):
         """Test various truthy values for boolean parsing."""

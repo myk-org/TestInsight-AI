@@ -16,14 +16,32 @@ logger = logging.getLogger("testinsight")
 MAX_COMBINED_TEXT_SIZE = 5 * 1024 * 1024  # 5MB in bytes
 
 
+def _validate_repo_limits(repo_max_files: int | None, repo_max_bytes: int | None) -> None:
+    """Validate repository limits for analysis endpoints.
+
+    Args:
+        repo_max_files: Maximum number of files to include from repository
+        repo_max_bytes: Maximum bytes per repository file
+
+    Raises:
+        HTTPException: If limits are outside acceptable ranges
+    """
+    if repo_max_files is not None and (repo_max_files < 1 or repo_max_files > 500):
+        raise HTTPException(status_code=422, detail="repo_max_files must be between 1 and 500")
+    if repo_max_bytes is not None and (repo_max_bytes < 1024 or repo_max_bytes > 2_000_000):
+        raise HTTPException(status_code=422, detail="repo_max_bytes must be between 1KB and 2MB")
+
+
 def _redact_text(text: str | None) -> str | None:
     """Redact sensitive information from text for safe logging.
 
-    Handles multiple URL patterns:
+    Handles multiple patterns including URLs and common sensitive data:
     - https://token@github.com/user/repo.git -> https://***@github.com/user/repo.git
     - https://user:token@github.com/user/repo -> https://***:***@github.com/user/repo # pragma: allowlist secret
     - ssh://user@host/repo -> ssh://***@host/repo
     - git@github.com:user/repo.git -> ***@github.com:user/repo.git
+    - API keys, passwords, tokens in quoted strings
+    - Database connection strings
 
     Args:
         text: Text to redact (can be None or non-string)
@@ -34,13 +52,26 @@ def _redact_text(text: str | None) -> str | None:
     if not text or not isinstance(text, str):
         return text
     try:
-        # Replace http(s) auth patterns: preserve protocol, replace user:pass@ with ***:***@ or user@ with ***@
-        redacted = re.sub(r"(https?)://[^/@:]+:[^/@]*@", r"\1://***:***@", text)
-        redacted = re.sub(r"(https?)://[^/@:]+@", r"\1://***@", redacted)
+        # Replace http(s) auth patterns (case-insensitive)
+        redacted = re.sub(r"(?i)(https?)://[^/@:]+:[^/@]*@", r"\1://***:***@", text)
+        redacted = re.sub(r"(?i)(https?)://[^/@:]+@", r"\1://***@", redacted)
         # Replace ssh://user@ patterns
-        redacted = re.sub(r"ssh://[^/@:]+@", "ssh://***@", redacted)
-        # Replace scp-like patterns: user@host: (like git@github.com:)
-        redacted = re.sub(r"[^/@:]+@([^/@:]+):", r"***@\1:", redacted)
+        redacted = re.sub(r"(?i)ssh://[^/@:]+@", "ssh://***@", redacted)
+        # Replace scp-like patterns at token boundaries: user@host:
+        redacted = re.sub(r"(?m)(?<!\S)[^/@:\s]+@([^/@:\s]+):", r"***@\1:", redacted)
+
+        # Redact common sensitive patterns in exception messages
+        # API keys in quotes (common format: 'AIzaSy...' or "sk-...")
+        redacted = re.sub(r"['\"]([A-Za-z0-9_-]{20,})['\"]", r"'***'", redacted)
+        # Password/token patterns in quotes
+        redacted = re.sub(
+            r"(password|token|key|secret)\s*['\"]([^'\"]+)['\"]", r"\1 '***'", redacted, flags=re.IGNORECASE
+        )
+        # Unquoted tokens after 'with token', 'token:', etc.
+        redacted = re.sub(r"(with\s+token|token[:=])\s+([A-Za-z0-9_-]{6,})", r"\1 ***", redacted, flags=re.IGNORECASE)
+        # Database connection strings with passwords
+        redacted = re.sub(r"://([^:/]+):([^@/]+)@", r"://\1:***@", redacted)
+
         return redacted
     except Exception:
         return text
@@ -111,10 +142,7 @@ async def analyze(
         if was_truncated:
             logger.warning("Input text was truncated due to size limits for analysis")
         # Basic input validation and sensible upper bounds for repository limits
-        if repo_max_files is not None and (repo_max_files < 1 or repo_max_files > 500):
-            raise HTTPException(status_code=422, detail="repo_max_files must be between 1 and 500")
-        if repo_max_bytes is not None and (repo_max_bytes < 1024 or repo_max_bytes > 2_000_000):
-            raise HTTPException(status_code=422, detail="repo_max_bytes must be between 1KB and 2MB")
+        _validate_repo_limits(repo_max_files, repo_max_bytes)
         logger.info(
             "Analyze(text): include_repo=%s repo_url=%s branch=%s commit=%s",
             include_repository_context,
@@ -140,9 +168,10 @@ async def analyze(
                 # Fallback: continue without repository context if cloning fails
                 warning_note = "Repository cloning failed; proceeding without repository context."
                 logger.warning(
-                    "Repository cloning failed for url=%s: %s",
+                    "Repository cloning failed for url=%s: %s (%s)",
                     _redact_repo_url(repository_url),
                     type(e).__name__,
+                    _redact_text(str(e)),
                 )
             else:
                 logger.info(
@@ -191,7 +220,8 @@ async def analyze(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Text analysis failed: {str(e)}")
+        logger.exception("Analyze(text) failed: %s", _redact_text(str(e)))
+        raise HTTPException(status_code=500, detail="Text analysis failed.")
 
 
 @router.post("/file", response_model=AnalysisResponse)
@@ -239,12 +269,9 @@ async def analyze_file(
             len(files or []),
         )
         # Basic input validation and sensible upper bounds for repository limits
-        if repo_max_files is not None and (repo_max_files < 1 or repo_max_files > 500):
-            raise HTTPException(status_code=422, detail="repo_max_files must be between 1 and 500")
-        if repo_max_bytes is not None and (repo_max_bytes < 1024 or repo_max_bytes > 2_000_000):
-            raise HTTPException(status_code=422, detail="repo_max_bytes must be between 1KB and 2MB")
+        _validate_repo_limits(repo_max_files, repo_max_bytes)
         if not files:
-            raise HTTPException(status_code=400, detail="No files provided")
+            raise HTTPException(status_code=422, detail="No files provided")
 
         # Validate file types
         for file in files:
@@ -317,9 +344,10 @@ async def analyze_file(
                 # Fallback: continue without repository context if cloning fails
                 warning_note = "Repository cloning failed; proceeding without repository context."
                 logger.warning(
-                    "Repository cloning failed for url=%s: %s",
+                    "Repository cloning failed for url=%s: %s (%s)",
                     _redact_repo_url(repo_url),
                     type(e).__name__,
+                    _redact_text(str(e)),
                 )
             else:
                 logger.info(
@@ -369,7 +397,8 @@ async def analyze_file(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"File analysis failed: {str(e)}")
+        logger.exception("Analyze(file) failed: %s", _redact_text(str(e)))
+        raise HTTPException(status_code=500, detail="File analysis failed.")
 
 
 @router.post("/jenkins", response_model=AnalysisResponse)
@@ -417,10 +446,7 @@ async def analyze_jenkins_build(
             include_console,
         )
         # Basic input validation and sensible upper bounds for repository limits
-        if repo_max_files is not None and (repo_max_files < 1 or repo_max_files > 500):
-            raise HTTPException(status_code=422, detail="repo_max_files must be between 1 and 500")
-        if repo_max_bytes is not None and (repo_max_bytes < 1024 or repo_max_bytes > 2_000_000):
-            raise HTTPException(status_code=422, detail="repo_max_bytes must be between 1KB and 2MB")
+        _validate_repo_limits(repo_max_files, repo_max_bytes)
         # Default label used in error messages before we can resolve a concrete build number
         build_label: str = "unknown"
         client_creators = ServiceClientCreators()
@@ -519,9 +545,10 @@ async def analyze_jenkins_build(
                 # Fallback: continue without repository context if cloning fails
                 warning_note = "Repository cloning failed; proceeding without repository context."
                 logger.warning(
-                    "Repository cloning failed for url=%s: %s",
+                    "Repository cloning failed for url=%s: %s (%s)",
                     _redact_repo_url(repo_url),
                     type(e).__name__,
+                    _redact_text(str(e)),
                 )
             else:
                 logger.info(
@@ -576,7 +603,13 @@ async def analyze_jenkins_build(
             build_label  # noqa: B018 - just ensure variable exists
         except Exception:
             build_label = "unknown"
+        logger.exception(
+            "Analyze(jenkins) failed job=%s build=%s: %s",
+            job_name,
+            build_label,
+            _redact_text(str(e)),
+        )
         raise HTTPException(
             status_code=500,
-            detail=f"Jenkins analysis failed for job {job_name}, build {build_label}: {str(e)}",
+            detail=f"Jenkins analysis failed for job {job_name}, build {build_label}.",
         )

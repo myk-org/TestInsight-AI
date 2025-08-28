@@ -59,11 +59,11 @@ def normalize_cors_origins(origins_str: str) -> list[str]:
         List of normalized, deduplicated origins
     """
     if not origins_str:
-        return ["*"]
+        return []  # Empty string means deny all, not wildcard
 
     origins = [o.strip() for o in origins_str.split(",") if o.strip()]
     if not origins:
-        return ["*"]
+        return []  # Empty list means deny all, not wildcard
 
     # SECURITY: Short-circuit for wildcard origin to maintain proper semantics
     for origin in origins:
@@ -133,7 +133,8 @@ def setup_cors_middleware(app: FastAPI) -> None:
     allow_credentials = parse_boolean_env(allow_credentials_env, True)
 
     # SECURITY: Wildcard origins cannot use credentials - detect ANY wildcard presence
-    if "*" in allow_origins and allow_credentials:
+    # Ignore empty-origin case and only disable credentials for true wildcard
+    if allow_origins and "*" in allow_origins and allow_credentials:
         logging.getLogger("testinsight").warning(
             "CORS credentials disabled due to wildcard origin (*). Specify explicit origins to enable credentials."
         )
@@ -141,6 +142,9 @@ def setup_cors_middleware(app: FastAPI) -> None:
 
     # Remove existing CORSMiddleware to make this function idempotent
     app.user_middleware = [middleware for middleware in app.user_middleware if middleware.cls != CORSMiddleware]
+
+    # Reset middleware stack to allow adding new middleware
+    app.middleware_stack = None
 
     # Register CORS middleware
     app.add_middleware(
