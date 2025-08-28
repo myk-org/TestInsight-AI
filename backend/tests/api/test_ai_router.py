@@ -48,7 +48,7 @@ class TestErrorKeywordMapping:
             "authentication failed",
             "unauthorized",
             "api key",
-            "credential",
+            "invalid credentials",
         }
 
         # Extract string keywords from the list (excluding Pattern objects)
@@ -60,7 +60,9 @@ class TestErrorKeywordMapping:
         assert len(regex_patterns) > 0, "Should have at least one regex pattern for auth keywords"
 
         # Verify specific auth regex pattern exists
-        auth_pattern_found = any(isinstance(kw, Pattern) and kw.pattern == r"\bauth\b" for kw in auth_keywords)
+        auth_pattern_found = any(
+            isinstance(kw, Pattern) and kw.pattern == r"\bauth(?:entication|orization)?\b" for kw in auth_keywords
+        )
         assert auth_pattern_found, "Should have auth word boundary regex pattern"
 
     def test_error_keyword_mapping_403_permission_keywords(self):
@@ -174,7 +176,7 @@ class TestClassifyErrorStatusCode:
             "Unauthorized access attempt",
             "API key is malformed",
             "Auth token expired",
-            "Credential verification failed",
+            "Invalid credentials supplied",
             "Invalid token supplied",
             "Token expired yesterday",
         ]

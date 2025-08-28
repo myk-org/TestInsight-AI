@@ -21,6 +21,7 @@ from backend.api.routers.constants import (
     INTERNAL_SERVER_ERROR_FETCHING_MODELS,
     BAD_GATEWAY_UPSTREAM_SERVICE_ERROR,
     SERVICE_UNAVAILABLE_ERROR,
+    REQUEST_TIMEOUT_ERROR,
 )
 from backend.tests.conftest import (
     FAKE_GEMINI_API_KEY,
@@ -409,7 +410,7 @@ class TestAIModelsEndpoints:
                 FAKE_GEMINI_API_KEY,
                 504,
                 None,  # No 'valid' field in error responses
-                "Request timeout",
+                REQUEST_TIMEOUT_ERROR,
             ),
         ],
     )

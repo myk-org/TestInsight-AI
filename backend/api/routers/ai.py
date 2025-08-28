@@ -25,7 +25,8 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 logger = logging.getLogger(__name__)
 
 # Precompiled regex patterns for performance
-REGEX_AUTH = re.compile(r"\bauth\b")
+# Match 'auth', 'authentication', or 'authorization' as whole words; excludes 'oauth'
+REGEX_AUTH = re.compile(r"\bauth(?:entication|orization)?\b")
 REGEX_QUOTA = re.compile(r"\bquota\b")
 REGEX_RATE_LIMIT = re.compile(
     r"\brate(?:[\s\-]?limit|[\s\-]?limited|\s+too\s+high|\s+exceeded|\s+throttle)\b"
@@ -158,10 +159,11 @@ def _merge_and_validate_api_key(query_api_key: str | None, request_body: AIReque
         request_body: Request body containing optional API key
 
     Returns:
-        Validated API key or None
+        Validated API key or None (if not provided anywhere)
 
     Raises:
-        HTTPException: If API key format is invalid (400 status)
+        HTTPException: 400 on invalid type (non-string), whitespace-padded/empty values,
+        or failing format validation; other errors bubble up to callers.
     """
     # Apply precedence rules: body overrides query parameter only when non-empty
     api_key = query_api_key
@@ -257,7 +259,7 @@ async def get_gemini_models(
     except TypeError:
         # Handle invalid API key type (same as validate-key endpoint)
         logger.error("TypeError in get_gemini_models - invalid API key type")
-        raise HTTPException(status_code=400, detail=INVALID_API_KEY_FORMAT)
+        raise HTTPException(status_code=400, detail=INVALID_API_KEY_TYPE_ERROR)
     except TimeoutError:
         # Map timeouts to 504 Gateway Timeout
         logger.error("Timeout error in get_gemini_models - request exceeded time limit")
