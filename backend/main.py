@@ -44,9 +44,11 @@ app = FastAPI(
 )
 
 # Configure CORS via environment-driven allowlist (registered after error middleware below)
-cors_origins_env = os.getenv("CORS_ALLOWED_ORIGINS", "*")
+# Default to localhost origins for development to support credentials
+default_origins = "http://localhost:3000,http://127.0.0.1:3000"
+cors_origins_env = os.getenv("CORS_ALLOWED_ORIGINS", default_origins)
 allow_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()] if cors_origins_env else ["*"]
-allow_credentials_env = os.getenv("CORS_ALLOW_CREDENTIALS", "false").lower() == "true"
+allow_credentials_env = os.getenv("CORS_ALLOW_CREDENTIALS", "true").lower() == "true"
 allow_credentials = allow_credentials_env and allow_origins != ["*"]
 
 
