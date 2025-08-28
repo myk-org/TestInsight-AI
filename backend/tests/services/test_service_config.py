@@ -358,6 +358,59 @@ class TestServiceConfig:
             with pytest.raises(ValueError, match="Invalid repository URL"):
                 service_client_creators.create_configured_git_client(repo_url=url)
 
+    @patch("backend.services.service_config.client_creators.GitClient")
+    def test_repo_url_embedded_credentials_rejected(self, mock_git_class, service_client_creators):
+        """Test URLs with embedded credentials are rejected to prevent secret leakage."""
+        credential_urls = [
+            "https://token@github.com/user/repo.git",
+            "https://user:pass@github.com/user/repo.git",
+            "ssh://token@github.com/user/repo.git",  # Non-git username
+            "https://user@github.com/user/repo.git",  # Any username in HTTPS
+        ]
+
+        for url in credential_urls:
+            with pytest.raises(ValueError, match="embedded credentials are not allowed"):
+                service_client_creators.create_configured_git_client(repo_url=url)
+
+    @patch("backend.services.service_config.client_creators.GitClient")
+    def test_repo_url_ssh_git_user_allowed(self, mock_git_class, service_client_creators):
+        """Test SSH URLs with 'git' user are allowed (common SSH pattern)."""
+        mock_client = Mock()
+        mock_git_class.return_value = mock_client
+
+        client = service_client_creators.create_configured_git_client(repo_url="ssh://git@github.com/user/repo.git")
+
+        mock_git_class.assert_called_once()
+        assert client == mock_client
+
+    @patch("backend.services.service_config.client_creators.GitClient")
+    def test_repo_url_whitespace_rejected(self, mock_git_class, service_client_creators):
+        """Test URLs with embedded whitespace are rejected."""
+        whitespace_urls = [
+            "https://github .com/user/repo.git",
+            "https://github.com /user/repo.git",
+            "ssh://git@github. com/user/repo.git",
+            "git@github .com:user/repo.git",
+        ]
+
+        for url in whitespace_urls:
+            with pytest.raises(ValueError, match="whitespace is not allowed"):
+                service_client_creators.create_configured_git_client(repo_url=url)
+
+    @patch("backend.services.service_config.client_creators.GitClient")
+    def test_repo_url_scp_requires_owner_repo_path(self, mock_git_class, service_client_creators):
+        """Test SCP-like URLs require owner/repo path structure."""
+        mock_client = Mock()
+        mock_git_class.return_value = mock_client
+
+        # Valid: has owner/repo structure
+        service_client_creators.create_configured_git_client(repo_url="git@github.com:owner/repo.git")
+        mock_git_class.assert_called_once()
+
+        # Invalid: no slash in path
+        with pytest.raises(ValueError, match="Invalid repository URL"):
+            service_client_creators.create_configured_git_client(repo_url="git@github.com:repo")
+
     @patch("backend.services.service_config.connection_testers.ServiceClientCreators")
     def test_test_jenkins_connection_success(self, mock_client_creators_class, service_connection_testers):
         """Test successful Jenkins connection test."""

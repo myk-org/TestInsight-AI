@@ -51,7 +51,10 @@ class ServiceClientCreators(BaseServiceConfig):
         if not isinstance(final_verify_ssl, bool):
             raise ValueError("Jenkins verify_ssl configuration must be boolean")
 
-        # Check if we have all required configuration values
+        # Normalize inputs and check required fields
+        final_url = final_url.strip()
+        final_username = final_username.strip()
+        final_password = final_password.strip()
         if not final_url or not final_username or not final_password:
             raise ValueError(
                 "Jenkins is not configured. Please provide URL, username, and API token in settings or as parameters."
@@ -135,11 +138,17 @@ class ServiceClientCreators(BaseServiceConfig):
 
         # Allow only https://, ssh:// or scp-like git URLs (user@host:path)
         repo_url = repo_url.strip()
+        if re.search(r"\s", repo_url):
+            raise ValueError("Invalid repository URL; whitespace is not allowed.")
         p = urlparse(repo_url)
         path_non_empty = bool(p.path and p.path.strip("/"))
         is_http_ssh = bool(p.scheme in ("https", "ssh") and p.netloc and path_non_empty)
-        # Disallow whitespace anywhere and require non-empty path after colon
-        is_scp_like = re.fullmatch(r"[^\s@]+@[^\s:]+:[^\s]+", repo_url) is not None
+        # Reject embedded credentials to avoid secret leakage (e.g., https://token@host/owner/repo)
+        # Exception: SSH URLs commonly use 'git@' which is not a credential
+        if is_http_ssh and (p.password or (p.username and p.username != "git")):
+            raise ValueError("Invalid repository URL; embedded credentials are not allowed.")
+        # Require at least one slash in the scp-like path (owner/repo)
+        is_scp_like = re.fullmatch(r"[^\s@]+@[^\s:]+:[^\s/]+/[^\s]+", repo_url) is not None
         if not (is_http_ssh or is_scp_like):
             raise ValueError("Invalid repository URL; only https://, ssh://, or scp-like formats allowed.")
 
@@ -147,6 +156,7 @@ class ServiceClientCreators(BaseServiceConfig):
         getters = ServiceConfigGetters()
         config = getters.get_github_config()
 
-        final_token = github_token if github_token is not None else config.get("token")
+        # Treat blank strings as missing and fall back to settings
+        final_token = github_token if (github_token is not None and str(github_token).strip()) else config.get("token")
 
         return GitClient(repo_url=repo_url, branch=branch, commit=commit, github_token=final_token)
