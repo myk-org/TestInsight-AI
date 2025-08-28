@@ -175,6 +175,21 @@ def _truncate_text_safely(text: str, max_size: int = MAX_COMBINED_TEXT_SIZE) -> 
     return truncated_text + truncation_note, True
 
 
+def _is_allowed_repo_url(url: str) -> bool:
+    """Check if repository URL uses allowed schemes/formats.
+
+    Args:
+        url: Repository URL to validate
+
+    Returns:
+        True if URL uses https://, ssh://, or scp-like format
+    """
+    p = urlparse(url)
+    is_http_ssh = bool(p.scheme in ("https", "ssh") and p.netloc)
+    is_scp_like = re.match(r"^[^@\s]+@[^:\s]+:.+$", url) is not None
+    return is_http_ssh or is_scp_like
+
+
 def _log_exception_safely(logger: logging.Logger, message: str, exception: Exception) -> None:
     """Log exception with sanitized traceback; never raise from logger."""
     sanitized_msg = _redact_text(str(exception))
@@ -187,11 +202,11 @@ def _log_exception_safely(logger: logging.Logger, message: str, exception: Excep
             # Fallback to a generic Exception if the original constructor signature differs
             exc_value = Exception(sanitized_msg or "")
         # Log at error level with the sanitized exc_info
-        logger.error("%s: %s", message, sanitized_msg,
-                     exc_info=(exc_type, exc_value, exception.__traceback__))
+        logger.error("%s: %s", message, sanitized_msg, exc_info=(exc_type, exc_value, exception.__traceback__))
     except Exception:
         # If logging itself fails, still emit something safe
         logger.error("%s: %s", message, sanitized_msg)
+
 
 @router.post("", response_model=AnalysisResponse)
 async def analyze(
@@ -234,11 +249,7 @@ async def analyze(
         cloned_repo_path = None
         warning_note: str | None = None
         if include_repository_context and repository_url:
-            # Basic scheme/format allowlist: https://, ssh://, or scp-like "user@host:path"
-            p = urlparse(repository_url)
-            is_http_ssh = (p.scheme in ("https", "ssh")) and bool(p.netloc)
-            is_scp_like = re.match(r"^[^@\s]+@[^:\s]+:.+$", repository_url) is not None
-            if not (is_http_ssh or is_scp_like):
+            if not _is_allowed_repo_url(repository_url):
                 raise HTTPException(
                     status_code=422,
                     detail="Invalid repository URL. Only https://, ssh://, or scp-like git URLs are allowed.",
@@ -390,9 +401,10 @@ async def analyze_file(
                 safe_name = _sanitize_filename_for_header(file.filename)
                 combined_text += f"\n\n=== {safe_name} ===\n{file_text}"
             except UnicodeDecodeError:
+                safe_name = _sanitize_filename_for_header(file.filename or "unknown")
                 raise HTTPException(
                     status_code=400,
-                    detail=f"File {file.filename} contains invalid UTF-8 encoding. Please ensure the file is text-based.",
+                    detail=f"File {safe_name} contains invalid UTF-8 encoding. Please ensure the file is text-based.",
                 )
 
         # If all files were empty (or whitespace-only), surface a clear error (test expects 500)
@@ -420,10 +432,7 @@ async def analyze_file(
         cloned_repo_path = None
         warning_note: str | None = None
         if include_repository_context and repo_url:
-            p = urlparse(repo_url) if repo_url else None
-            is_http_ssh = bool(p and (p.scheme in ("https", "ssh")) and p.netloc)
-            is_scp_like = bool(repo_url and re.match(r"^[^@\s]+@[^:\s]+:.+$", repo_url))
-            if not (is_http_ssh or is_scp_like):
+            if not _is_allowed_repo_url(repo_url):
                 raise HTTPException(
                     status_code=422,
                     detail="Invalid repository URL. Only https://, ssh://, or scp-like git URLs are allowed.",
@@ -550,7 +559,8 @@ async def analyze_jenkins_build(
                 url=jenkins_url, username=jenkins_username, password=jenkins_password, verify_ssl=verify_ssl
             )
         except ValueError as e:
-            raise HTTPException(status_code=503, detail=str(e))
+            logger.warning("Analyze(jenkins): Jenkins client configuration error: %s", _redact_text(str(e)))
+            raise HTTPException(status_code=503, detail="Jenkins client configuration error.")
 
         if not jenkins_client or not jenkins_client.is_connected():
             raise HTTPException(
@@ -591,8 +601,13 @@ async def analyze_jenkins_build(
             try:
                 # JenkinsClient from python-jenkins exposes get_build_console_output
                 console_output = jenkins_client.get_build_console_output(job_name, final_build_number)
-            except Exception:
-                # If console retrieval fails, continue with test report only
+            except Exception as e:
+                logger.warning(
+                    "Analyze(jenkins): console retrieval failed job=%s build=%s: %s",
+                    job_name,
+                    final_build_number,
+                    _redact_text(str(e)),
+                )
                 console_output = None
 
         # Combine contents for AI analysis
@@ -629,10 +644,7 @@ async def analyze_jenkins_build(
         cloned_repo_path = None
         warning_note: str | None = None
         if include_repository_context and repo_url:
-            p = urlparse(repo_url) if repo_url else None
-            is_http_ssh = bool(p and (p.scheme in ("https", "ssh")) and p.netloc)
-            is_scp_like = bool(repo_url and re.match(r"^[^@\s]+@[^:\s]+:.+$", repo_url))
-            if not (is_http_ssh or is_scp_like):
+            if not _is_allowed_repo_url(repo_url):
                 raise HTTPException(
                     status_code=422,
                     detail="Invalid repository URL. Only https://, ssh://, or scp-like git URLs are allowed.",

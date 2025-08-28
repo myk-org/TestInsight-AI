@@ -1,9 +1,9 @@
 """FastAPI application for TestInsight AI."""
 
-import os
 import logging
+import os
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator, Callable, Awaitable
+from typing import AsyncGenerator, Awaitable, Callable
 
 import uvicorn
 from dotenv import load_dotenv
@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
+
 from backend.api.main import router
 
 
@@ -70,7 +71,7 @@ def normalize_cors_origins(origins_str: str) -> list[str]:
 
     # SECURITY: Short-circuit for wildcard origin to maintain proper semantics
     for origin in origins:
-        if origin.strip() == "*":
+        if origin == "*":
             return ["*"]
 
     # Deduplicate while preserving order with strict origin validation
@@ -106,10 +107,6 @@ def normalize_cors_origins(origins_str: str) -> list[str]:
             except Exception:
                 continue
 
-        # Double-check fragments after IPv6 reprocessing
-        if parts.fragment:
-            continue
-
         # Require truthy hostname (not None, empty, or "None"/"none" string)
         if not parts.hostname or parts.hostname.lower() == "none":
             continue
@@ -118,8 +115,8 @@ def normalize_cors_origins(origins_str: str) -> list[str]:
         if parts.username or parts.password:
             continue
 
-        # Reject paths, queries, or fragments
-        if parts.path or parts.query or parts.fragment:
+        # Reject paths or queries
+        if parts.path or parts.query:
             continue
 
         # Handle IPv6 literals - ensure they have brackets
@@ -193,7 +190,7 @@ def setup_cors_middleware(app: FastAPI) -> None:
         allow_credentials = False
 
     # Remove existing CORSMiddleware to make this function idempotent
-    app.user_middleware = [middleware for middleware in app.user_middleware if middleware.cls != CORSMiddleware]
+    app.user_middleware = [m for m in app.user_middleware if m.cls is not CORSMiddleware]
 
     # Reset middleware stack to allow adding new middleware
     app.middleware_stack = None
@@ -212,7 +209,7 @@ def setup_cors_middleware(app: FastAPI) -> None:
 
 
 # Optional global error handler (env gated) while preserving default FastAPI behavior otherwise
-if os.getenv("ENABLE_GLOBAL_ERROR_HANDLER", "false").lower() == "true":
+if parse_boolean_env(os.getenv("ENABLE_GLOBAL_ERROR_HANDLER"), False):
 
     async def error_middleware(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         try:
@@ -262,5 +259,5 @@ if __name__ == "__main__":
         "backend.main:app",
         host=os.getenv("HOST", "0.0.0.0"),
         port=int(os.getenv("PORT", 8000)),
-        reload=os.getenv("DEBUG", "false").lower() == "true",
+        reload=parse_boolean_env(os.getenv("DEBUG"), False),
     )

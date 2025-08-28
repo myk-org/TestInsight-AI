@@ -157,6 +157,7 @@ class TestCORSConfiguration:
         """Test that wildcard origins with credentials shows warning and flips credentials."""
         from backend.main import setup_cors_middleware
         from fastapi import FastAPI
+        from fastapi.middleware.cors import CORSMiddleware
 
         # Create test app
         test_app = FastAPI()
@@ -175,11 +176,7 @@ class TestCORSConfiguration:
                 # Verify middleware was added with credentials disabled
                 # Check that the middleware list contains CORS middleware
                 assert len(test_app.user_middleware) > 0
-                cors_middleware = None
-                for middleware in test_app.user_middleware:
-                    if hasattr(middleware.cls, "__name__") and middleware.cls.__name__ == "CORSMiddleware":
-                        cors_middleware = middleware
-                        break
+                cors_middleware = next((m for m in test_app.user_middleware if m.cls is CORSMiddleware), None)
 
                 assert cors_middleware is not None
                 # Verify credentials were flipped to False for security by checking kwargs
@@ -310,7 +307,5 @@ class TestCORSConfiguration:
             assert initial_middleware_count == final_middleware_count
 
             # Should have exactly one CORSMiddleware
-            cors_middleware_count = sum(
-                1 for middleware in test_app.user_middleware if middleware.cls == CORSMiddleware
-            )
+            cors_middleware_count = sum(1 for m in test_app.user_middleware if m.cls is CORSMiddleware)
             assert cors_middleware_count == 1
