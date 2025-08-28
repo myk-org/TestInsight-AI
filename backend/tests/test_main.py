@@ -261,6 +261,29 @@ class TestCORSConfiguration:
         result = normalize_cors_origins(all_invalid)
         assert result == []
 
+    def test_normalize_cors_origins_reject_fragments(self):
+        """Test that origins containing URL fragments are rejected."""
+        origins = "http://example.com#frag,http://localhost:3000"
+        result = normalize_cors_origins(origins)
+        assert result == ["http://localhost:3000"]
+
+    def test_cors_empty_env_denies_all(self):
+        """Test that CORS_ALLOWED_ORIGINS="" results in empty allow_origins list."""
+        import os
+        from unittest.mock import patch
+        from backend.main import setup_cors_middleware
+        from fastapi import FastAPI
+        from fastapi.middleware.cors import CORSMiddleware
+
+        app = FastAPI()
+        with patch.dict(os.environ, {"CORS_ALLOWED_ORIGINS": "", "CORS_ALLOW_CREDENTIALS": "true"}, clear=False):
+            setup_cors_middleware(app)
+
+        cm = next((m for m in app.user_middleware if m.cls is CORSMiddleware), None)
+        assert cm is not None
+        assert cm.kwargs["allow_origins"] == []
+        assert cm.kwargs["allow_credentials"] is True
+
     def test_cors_middleware_idempotency(self):
         """Test that calling setup_cors_middleware twice results in single CORSMiddleware."""
         from backend.main import setup_cors_middleware

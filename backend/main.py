@@ -78,7 +78,7 @@ def normalize_cors_origins(origins_str: str) -> list[str]:
     normalized_origins = []
     for origin in origins:
         # Parse and validate strict "origin" (scheme://host[:port]) — no path, query, or userinfo
-        parts = urlsplit(origin.rstrip("/"))
+        parts = urlsplit(origin.rstrip("/"), allow_fragments=False)
 
         # Require http/https scheme
         if parts.scheme not in ("http", "https"):
@@ -102,9 +102,13 @@ def normalize_cors_origins(origins_str: str) -> list[str]:
                     # No port, bracket the entire address
                     bracketed_origin = origin.replace(f"://{netloc}", f"://[{netloc}]")
 
-                parts = urlsplit(bracketed_origin.rstrip("/"))
+                parts = urlsplit(bracketed_origin.rstrip("/"), allow_fragments=False)
             except Exception:
                 continue
+
+        # Double-check fragments after IPv6 reprocessing
+        if parts.fragment:
+            continue
 
         # Require truthy hostname (not None, empty, or "None"/"none" string)
         if not parts.hostname or parts.hostname.lower() == "none":
@@ -114,8 +118,8 @@ def normalize_cors_origins(origins_str: str) -> list[str]:
         if parts.username or parts.password:
             continue
 
-        # Reject paths or query parameters
-        if parts.path or parts.query:
+        # Reject paths, queries, or fragments
+        if parts.path or parts.query or parts.fragment:
             continue
 
         # Handle IPv6 literals - ensure they have brackets

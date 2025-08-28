@@ -3,6 +3,7 @@
 import logging
 import re
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
@@ -79,9 +80,10 @@ def _redact_text(text: str | None) -> str | None:
             r"(?i)([?&])(token|access_token|api_key|api-key|key|secret|password)=[^&\s]+", r"\1\2=***", redacted
         )
 
-        # Redact Authorization headers and Bearer tokens
+        # Redact Authorization headers (Bearer & Basic)
         redacted = re.sub(r"(?i)authorization:\s*bearer\s+[A-Za-z0-9\-_\.]+", "Authorization: Bearer ***", redacted)
         redacted = re.sub(r"(?i)\bBearer\s+[A-Za-z0-9\-_\.]+", "Bearer ***", redacted)
+        redacted = re.sub(r"(?i)authorization:\s*basic\s+[A-Za-z0-9+/=]+", "Authorization: Basic ***", redacted)
 
         return redacted
     except Exception:
@@ -173,6 +175,25 @@ def _truncate_text_safely(text: str, max_size: int = MAX_COMBINED_TEXT_SIZE) -> 
     return truncated_text + truncation_note, True
 
 
+def _log_exception_safely(logger: logging.Logger, message: str, exception: Exception) -> None:
+    """Log exception with sanitized traceback to prevent information leakage.
+
+    Args:
+        logger: Logger instance to use
+        message: Base error message
+        exception: Original exception to log
+    """
+
+    # Create new exception with redacted message
+    sanitized_exception = type(exception)(_redact_text(str(exception)))
+
+    # Build exc_info tuple with original traceback but sanitized exception
+    exc_info = (type(exception), sanitized_exception, exception.__traceback__)
+
+    # Log at error level with the sanitized exc_info
+    logger.error(message, exc_info=exc_info)
+
+
 @router.post("", response_model=AnalysisResponse)
 async def analyze(
     text: str = Form(..., description="Text content to analyze (logs, junit xml, etc.)"),
@@ -214,6 +235,15 @@ async def analyze(
         cloned_repo_path = None
         warning_note: str | None = None
         if include_repository_context and repository_url:
+            # Basic scheme/format allowlist: https://, ssh://, or scp-like "user@host:path"
+            p = urlparse(repository_url)
+            is_http_ssh = (p.scheme in ("https", "ssh")) and bool(p.netloc)
+            is_scp_like = re.match(r"^[^@\s]+@[^:\s]+:.+$", repository_url) is not None
+            if not (is_http_ssh or is_scp_like):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Invalid repository URL. Only https://, ssh://, or scp-like git URLs are allowed.",
+                )
             try:
                 git_client = client_creators.create_configured_git_client(
                     repo_url=repository_url, branch=repository_branch, commit=repository_commit
@@ -275,7 +305,7 @@ async def analyze(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("Analyze(text) failed: %s", _redact_text(str(e)))
+        _log_exception_safely(logger, "Analyze(text) failed", e)
         raise HTTPException(status_code=500, detail="Text analysis failed.")
 
 
@@ -391,6 +421,14 @@ async def analyze_file(
         cloned_repo_path = None
         warning_note: str | None = None
         if include_repository_context and repo_url:
+            p = urlparse(repo_url) if repo_url else None
+            is_http_ssh = bool(p and (p.scheme in ("https", "ssh")) and p.netloc)
+            is_scp_like = bool(repo_url and re.match(r"^[^@\s]+@[^:\s]+:.+$", repo_url))
+            if not (is_http_ssh or is_scp_like):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Invalid repository URL. Only https://, ssh://, or scp-like git URLs are allowed.",
+                )
             try:
                 git_client = client_creators.create_configured_git_client(
                     repo_url=repo_url, branch=repository_branch, commit=repository_commit
@@ -453,7 +491,7 @@ async def analyze_file(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("Analyze(file) failed: %s", _redact_text(str(e)))
+        _log_exception_safely(logger, "Analyze(file) failed", e)
         raise HTTPException(status_code=500, detail="File analysis failed.")
 
 
@@ -592,6 +630,14 @@ async def analyze_jenkins_build(
         cloned_repo_path = None
         warning_note: str | None = None
         if include_repository_context and repo_url:
+            p = urlparse(repo_url) if repo_url else None
+            is_http_ssh = bool(p and (p.scheme in ("https", "ssh")) and p.netloc)
+            is_scp_like = bool(repo_url and re.match(r"^[^@\s]+@[^:\s]+:.+$", repo_url))
+            if not (is_http_ssh or is_scp_like):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Invalid repository URL. Only https://, ssh://, or scp-like git URLs are allowed.",
+                )
             try:
                 git_client = client_creators.create_configured_git_client(
                     repo_url=repo_url, branch=repository_branch, commit=repository_commit
@@ -659,11 +705,10 @@ async def analyze_jenkins_build(
             build_label  # noqa: B018 - just ensure variable exists
         except Exception:
             build_label = "unknown"
-        logger.exception(
-            "Analyze(jenkins) failed job=%s build=%s: %s",
-            job_name,
-            build_label,
-            _redact_text(str(e)),
+        _log_exception_safely(
+            logger,
+            f"Analyze(jenkins) failed job={job_name} build={build_label}",
+            e,
         )
         raise HTTPException(
             status_code=500,
