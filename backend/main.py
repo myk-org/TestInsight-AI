@@ -27,6 +27,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logging.basicConfig(level=getattr(logging, log_level, logging.INFO))
     logger = logging.getLogger("testinsight")
 
+    # Configure CORS after environment is loaded
+    setup_cors_middleware(app)
+
     # Startup
     logger.info("TestInsight AI starting up…")
 
@@ -36,6 +39,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("TestInsight AI shutting down…")
 
 
+# Load environment variables early to avoid config drift
+load_dotenv()
+
 app = FastAPI(
     title="TestInsight AI",
     description="AI-powered test analysis and insights platform",
@@ -43,15 +49,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configure CORS via environment-driven allowlist (registered after error middleware below)
-# Default to localhost origins for development (including HTTPS) to support credentials
-default_origins = "http://localhost:3000,http://127.0.0.1:3000,https://localhost:3000,https://127.0.0.1:3000"
-cors_origins_env = os.getenv("CORS_ALLOWED_ORIGINS", default_origins)
-
 
 def normalize_cors_origins(origins_str: str) -> list[str]:
     """
     Parse, deduplicate, and normalize CORS origins while preserving order.
+    Short-circuits for wildcard origins to maintain security semantics.
 
     Args:
         origins_str: Comma-separated origins string
@@ -66,6 +68,11 @@ def normalize_cors_origins(origins_str: str) -> list[str]:
     if not origins:
         return ["*"]
 
+    # SECURITY: Short-circuit for wildcard origin to maintain proper semantics
+    for origin in origins:
+        if origin.strip() == "*":
+            return ["*"]
+
     # Deduplicate while preserving order
     seen = set()
     normalized_origins = []
@@ -79,13 +86,14 @@ def normalize_cors_origins(origins_str: str) -> list[str]:
     return normalized_origins
 
 
-def parse_boolean_env(env_value: str, default: bool = False) -> bool:
+def parse_boolean_env(env_value: str | None, default: bool = False) -> bool:
     """
     Parse boolean environment variable with support for various truthy values.
+    Properly handles whitespace and honors default for unrecognized tokens.
 
     Args:
-        env_value: Environment variable value
-        default: Default value if parsing fails
+        env_value: Environment variable value (can be None)
+        default: Default value if env_value is None, empty, or unrecognized
 
     Returns:
         Parsed boolean value
@@ -93,20 +101,51 @@ def parse_boolean_env(env_value: str, default: bool = False) -> bool:
     if not env_value:
         return default
 
+    # Strip whitespace and handle empty after stripping
+    cleaned_value = env_value.strip()
+    if not cleaned_value:
+        return default
+
     # Support various truthy values: true, yes, 1, on
-    return env_value.lower() in ("true", "yes", "1", "on")
+    if cleaned_value.lower() in ("true", "yes", "1", "on"):
+        return True
+
+    # Support various falsy values: false, no, 0, off
+    if cleaned_value.lower() in ("false", "no", "0", "off"):
+        return False
+
+    # Return default for unrecognized tokens
+    return default
 
 
-allow_origins = normalize_cors_origins(cors_origins_env)
-allow_credentials_env = os.getenv("CORS_ALLOW_CREDENTIALS", "true")
-allow_credentials = parse_boolean_env(allow_credentials_env, True)
+def setup_cors_middleware(app: FastAPI) -> None:
+    """
+    Configure CORS middleware with proper security checks.
+    Called during lifespan startup after environment is loaded.
+    """
+    # Default to localhost origins for development (including HTTPS) to support credentials
+    default_origins = "http://localhost:3000,http://127.0.0.1:3000,https://localhost:3000,https://127.0.0.1:3000"
+    cors_origins_env = os.getenv("CORS_ALLOWED_ORIGINS", default_origins)
 
-# Security: Wildcard origins cannot use credentials
-if allow_origins == ["*"] and allow_credentials:
-    logging.getLogger("testinsight").warning(
-        "CORS credentials disabled due to wildcard origin (*). Specify explicit origins to enable credentials."
+    allow_origins = normalize_cors_origins(cors_origins_env)
+    allow_credentials_env = os.getenv("CORS_ALLOW_CREDENTIALS", "true")
+    allow_credentials = parse_boolean_env(allow_credentials_env, True)
+
+    # SECURITY: Wildcard origins cannot use credentials - detect ANY wildcard presence
+    if "*" in allow_origins and allow_credentials:
+        logging.getLogger("testinsight").warning(
+            "CORS credentials disabled due to wildcard origin (*). Specify explicit origins to enable credentials."
+        )
+        allow_credentials = False
+
+    # Register CORS middleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allow_origins,
+        allow_credentials=allow_credentials,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
-    allow_credentials = False
 
 
 # Optional global error handler (env gated) while preserving default FastAPI behavior otherwise
@@ -141,15 +180,6 @@ async def security_headers(request: Request, call_next: Callable[[Request], Awai
 
 # Include API routes
 app.include_router(router, prefix="/api/v1")
-
-# Register CORS last so it wraps error responses as well
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allow_origins,
-    allow_credentials=allow_credentials,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 
 @app.get("/")

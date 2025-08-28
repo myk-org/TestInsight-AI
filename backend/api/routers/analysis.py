@@ -47,7 +47,7 @@ async def analyze(
     try:
         # Early validation to avoid long-running work on empty input
         if not text or not text.strip():
-            raise HTTPException(status_code=500, detail="Text content is empty; no analyzable content")
+            raise HTTPException(status_code=422, detail="Text content is empty; no analyzable content")
         # Basic input validation and sensible upper bounds for repository limits
         if repo_max_files is not None and (repo_max_files < 1 or repo_max_files > 500):
             raise HTTPException(status_code=422, detail="repo_max_files must be between 1 and 500")
