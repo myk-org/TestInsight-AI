@@ -7,6 +7,8 @@ interface FileUploadProps {
   repoUrl: string;
   branch: string;
   commit: string;
+  repoMaxFiles: number;
+  repoMaxBytes: number;
   systemPrompt: string;
   onAnalysisStart: () => void;
   onAnalysisComplete: (results: AnalysisResult) => void;
@@ -18,6 +20,8 @@ const FileUpload: React.FC<FileUploadProps> = ({
   branch,
   commit,
   systemPrompt,
+  repoMaxFiles,
+  repoMaxBytes,
   onAnalysisStart,
   onAnalysisComplete,
   onAnalysisError,
@@ -76,7 +80,9 @@ const FileUpload: React.FC<FileUploadProps> = ({
         url: repoUrl.trim(),
         branch: branch?.trim() || undefined,
         commit: commit?.trim() || undefined,
-        includeContext: includeRepoContext
+        includeContext: includeRepoContext,
+        maxFiles: repoMaxFiles,
+        maxBytes: repoMaxBytes
       } : undefined;
 
       const results = await analyzeXMLFiles(uploadedFiles, repositoryConfig, systemPrompt);

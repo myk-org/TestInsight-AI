@@ -97,7 +97,15 @@ async def get_job_builds(
                 status_code=503, detail="Jenkins client connection failed. Please check your Jenkins settings."
             )
 
-        builds = jenkins_client.get_job_builds(job_name, limit)
+        # Validate limit parameter
+        try:
+            limit_int = int(limit)
+        except Exception:
+            limit_int = 10
+        if limit_int <= 0:
+            raise HTTPException(status_code=503, detail="Invalid limit value")
+
+        builds = jenkins_client.get_job_builds(job_name, limit_int)
 
         return {"job_name": job_name, "builds": builds, "total": len(builds), "limit": limit}
     except HTTPException:

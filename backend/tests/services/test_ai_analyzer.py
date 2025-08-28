@@ -188,7 +188,7 @@ class TestAIAnalyzer:
         analyzer = AIAnalyzer(client=mock_client)
 
         # Should raise ValueError for invalid JSON
-        with pytest.raises(ValueError, match="AI returned invalid JSON"):
+        with pytest.raises(ValueError, match="AI returned unparseable JSON content"):
             analyzer._generate_insights("context")
 
     def test_generate_insights_empty_response(self):

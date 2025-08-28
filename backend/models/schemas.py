@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictStr
 
 
 class Severity(str, Enum):
@@ -38,6 +38,8 @@ class AnalysisRequest(BaseModel):
     repository_commit: str | None = Field(None, description="Repository commit hash to analyze")
     include_repository_context: bool = Field(False, description="Include repository source code in analysis")
     cloned_repo_path: str | None = None
+    repo_max_files: int | None = Field(None, ge=1, description="Max repo files to include in context")
+    repo_max_bytes: int | None = Field(None, ge=1024, description="Max bytes per repo file to include")
 
 
 class AnalysisResponse(BaseModel):
@@ -75,9 +77,10 @@ class AISettings(BaseModel):
 class AppSettings(BaseModel):
     """Complete application settings."""
 
-    jenkins: JenkinsSettings = Field(default_factory=JenkinsSettings, description="Jenkins settings")
-    github: GitHubSettings = Field(default_factory=GitHubSettings, description="GitHub settings")
-    ai: AISettings = Field(default_factory=AISettings, description="AI settings")
+    # Create fresh nested models per AppSettings instance
+    jenkins: JenkinsSettings = Field(default_factory=JenkinsSettings)
+    github: GitHubSettings = Field(default_factory=GitHubSettings)
+    ai: AISettings = Field(default_factory=AISettings)
     last_updated: datetime | None = Field(None, description="Last settings update timestamp")
 
 
@@ -125,3 +128,20 @@ class TestConnectionWithParamsRequest(BaseModel):
 
     service: str = Field(..., description="Service to test (jenkins, github, ai)")
     config: dict[str, Any] = Field(..., description="Configuration parameters for the service")
+
+
+class AIRequest(BaseModel):
+    """Request body for AI endpoints with optional API key override."""
+
+    model_config = {"extra": "forbid"}
+
+    api_key: StrictStr | None = Field(None, description="Optional API key to override configured key")
+
+
+class KeyValidationResponse(BaseModel):
+    """Response from API key validation."""
+
+    model_config = {"extra": "forbid"}
+
+    valid: bool = Field(..., description="Whether the API key is valid")
+    message: str = Field(..., description="Validation result message")

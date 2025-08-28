@@ -1,6 +1,8 @@
 """Settings management service for TestInsight AI."""
 
 import json
+import logging
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -19,17 +21,47 @@ class SettingsService:
             settings_file: Path to settings file. Defaults to data/settings.json
             enable_encryption: Whether to encrypt sensitive data
         """
-        # Create data directory if it doesn't exist
-        settings_path = Path(settings_file)
-        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        # Logger
+        self._logger = logging.getLogger("testinsight")
 
-        self.settings_file = Path(settings_path)
+        # Resolve settings file path robustly across different CWDs/containers
+        env_override = os.getenv("SETTINGS_FILE")
+        configured_path = Path(env_override or settings_file)
+
+        if configured_path.is_absolute():
+            resolved_path = configured_path
+        else:
+            # Candidate locations (first existing wins)
+            candidates: list[Path] = []
+            try:
+                candidates.append(Path.cwd() / configured_path)
+            except Exception:
+                pass
+            try:
+                # Project root inferred from this file: backend/services/ → project root is two parents up
+                project_root = Path(__file__).resolve().parents[2]
+                candidates.append(project_root / configured_path)
+            except Exception:
+                pass
+
+            resolved_path = next(
+                (p for p in candidates if p.parent.exists()), (candidates[-1] if candidates else configured_path)
+            )
+
+        # Ensure directory exists
+        resolved_path.parent.mkdir(parents=True, exist_ok=True)
+
+        self.settings_file = Path(resolved_path)
+        self._logger.info("SettingsService: using settings file at %s", str(self.settings_file))
         self._current_settings: AppSettings | None = None
         self.enable_encryption = enable_encryption
         self._encryption = SettingsEncryption() if enable_encryption else None
 
         # Ensure the settings file exists with default values
         if not self.settings_file.exists():
+            self._logger.info(
+                "SettingsService: settings file not found, creating default at %s", str(self.settings_file)
+            )
             self._save_settings(AppSettings(last_updated=datetime.now()))
 
     def get_settings(self) -> AppSettings:
@@ -55,7 +87,7 @@ class SettingsService:
         current = self.get_settings()
 
         # Update only provided sections
-        update_data = {}
+        update_data: dict[str, Any] = {}
 
         if update.jenkins is not None:
             update_data["jenkins"] = update.jenkins.model_dump()
@@ -280,14 +312,24 @@ class SettingsService:
     def _load_settings(self) -> AppSettings:
         """Load settings from file."""
         try:
+            self._logger.info("SettingsService: loading settings from %s", str(self.settings_file))
             with open(self.settings_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             # Decrypt sensitive fields before creating settings object
             decrypted_data = self._decrypt_sensitive_fields(data)
-            return AppSettings(**decrypted_data)
-        except (FileNotFoundError, json.JSONDecodeError, ValueError):
+            settings = AppSettings(**decrypted_data)
+            self._logger.info(
+                "SettingsService: settings loaded successfully (last_updated=%s)", str(settings.last_updated)
+            )
+            return settings
+        except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
             # Create default settings if file doesn't exist or is invalid
+            self._logger.warning(
+                "SettingsService: failed to load settings (%s). Creating defaults at %s",
+                type(e).__name__,
+                str(self.settings_file),
+            )
             _current_settings = AppSettings(last_updated=datetime.now())
             self._save_settings(_current_settings)
             return _current_settings

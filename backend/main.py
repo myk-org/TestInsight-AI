@@ -1,9 +1,9 @@
 """FastAPI application for TestInsight AI."""
 
-import os
 import logging
+import os
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator, Callable, Awaitable
+from typing import AsyncGenerator, Awaitable, Callable
 
 import uvicorn
 from dotenv import load_dotenv
@@ -13,19 +13,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
+
 from backend.api.main import router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan handler."""
-    # Load environment variables
-    load_dotenv()
-
     # Configure logging
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
     logging.basicConfig(level=getattr(logging, log_level, logging.INFO))
     logger = logging.getLogger("testinsight")
+
+    # Configure CORS after environment is loaded
+    setup_cors_middleware(app)
 
     # Startup
     logger.info("TestInsight AI starting up…")
@@ -36,6 +37,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("TestInsight AI shutting down…")
 
 
+# Load environment variables early to avoid config drift
+load_dotenv()
+
 app = FastAPI(
     title="TestInsight AI",
     description="AI-powered test analysis and insights platform",
@@ -43,15 +47,169 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configure CORS via environment-driven allowlist (registered after error middleware below)
-cors_origins_env = os.getenv("CORS_ALLOWED_ORIGINS", "*")
-allow_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()] if cors_origins_env else ["*"]
-allow_credentials_env = os.getenv("CORS_ALLOW_CREDENTIALS", "false").lower() == "true"
-allow_credentials = allow_credentials_env and allow_origins != ["*"]
+
+def normalize_cors_origins(origins_str: str) -> list[str]:
+    """
+    Parse, deduplicate, and normalize CORS origins while preserving order.
+    Short-circuits for wildcard origins to maintain security semantics.
+    Validates origins strictly to reject paths, credentials, and malformed URLs.
+
+    Args:
+        origins_str: Comma-separated origins string
+
+    Returns:
+        List of normalized, deduplicated origins (invalid entries are skipped)
+    """
+    if not origins_str:
+        return []  # Empty string means deny all, not wildcard
+
+    from urllib.parse import urlsplit
+
+    origins = [o.strip() for o in origins_str.split(",") if o.strip()]
+    if not origins:
+        return []  # Empty list means deny all, not wildcard
+
+    # SECURITY: Short-circuit for wildcard origin to maintain proper semantics
+    for origin in origins:
+        if origin == "*":
+            return ["*"]
+
+    # Deduplicate while preserving order with strict origin validation
+    seen = set()
+    normalized_origins = []
+    for origin in origins:
+        # Parse and validate strict "origin" (scheme://host[:port]) — no path, query, or userinfo
+        parts = urlsplit(origin.rstrip("/"), allow_fragments=False)
+
+        # Require http/https scheme
+        if parts.scheme not in ("http", "https"):
+            continue
+
+        # Special handling for IPv6 addresses without brackets
+        # If hostname is None but netloc contains multiple colons, it might be an unbracketed IPv6
+        if not parts.hostname and parts.netloc and parts.netloc.count(":") > 1:
+            # Try to separate IPv6 address from port
+            try:
+                netloc = parts.netloc
+                last_colon = netloc.rfind(":")
+                potential_ipv6 = netloc[:last_colon]
+                potential_port = netloc[last_colon + 1 :]
+
+                # Check if the last part after colon is a valid port number
+                if potential_port.isdigit():
+                    # Reconstruct with properly bracketed IPv6
+                    bracketed_origin = origin.replace(f"://{netloc}", f"://[{potential_ipv6}]:{potential_port}")
+                else:
+                    # No port, bracket the entire address
+                    bracketed_origin = origin.replace(f"://{netloc}", f"://[{netloc}]")
+
+                parts = urlsplit(bracketed_origin.rstrip("/"), allow_fragments=False)
+            except Exception:
+                continue
+
+        # Require truthy hostname (not None, empty, or "None"/"none" string)
+        if not parts.hostname or parts.hostname.lower() == "none":
+            continue
+
+        # Reject any userinfo (username or password)
+        if parts.username or parts.password:
+            continue
+
+        # Reject paths or queries
+        if parts.path or parts.query:
+            continue
+
+        # Handle IPv6 literals - ensure they have brackets
+        hostname = parts.hostname
+        if ":" in hostname and not (hostname.startswith("[") and hostname.endswith("]")):
+            hostname = f"[{hostname}]"
+
+        normalized = f"{parts.scheme}://{hostname}{f':{parts.port}' if parts.port else ''}"
+        if normalized not in seen:
+            seen.add(normalized)
+            normalized_origins.append(normalized)
+
+    return normalized_origins
+
+
+def parse_boolean_env(env_value: str | None, default: bool = False) -> bool:
+    """
+    Parse boolean environment variable with support for various truthy values.
+    Properly handles whitespace and honors default for unrecognized tokens.
+
+    Args:
+        env_value: Environment variable value (can be None)
+        default: Default value if env_value is None, empty, or unrecognized
+
+    Returns:
+        Parsed boolean value. Falls back to `default` for None/empty/unrecognized tokens.
+    """
+    if not env_value:
+        return default
+
+    # Strip whitespace and handle empty after stripping
+    cleaned_value = env_value.strip()
+    if not cleaned_value:
+        return default
+
+    # Normalize to lowercase once to avoid repeated .lower() calls
+    normalized_value = cleaned_value.lower()
+
+    # Support various truthy values: true, yes, 1, on
+    if normalized_value in ("true", "yes", "1", "on"):
+        return True
+
+    # Support various falsy values: false, no, 0, off
+    if normalized_value in ("false", "no", "0", "off"):
+        return False
+
+    # Return default for unrecognized tokens
+    return default
+
+
+def setup_cors_middleware(app: FastAPI) -> None:
+    """
+    Configure CORS middleware with proper security checks.
+    Called during lifespan startup after environment is loaded.
+    Idempotent - removes existing CORSMiddleware before adding new one.
+    """
+    # Default to localhost origins for development (including HTTPS) to support credentials
+    default_origins = "http://localhost:3000,http://127.0.0.1:3000,https://localhost:3000,https://127.0.0.1:3000"
+    cors_origins_env = os.getenv("CORS_ALLOWED_ORIGINS", default_origins)
+
+    allow_origins = normalize_cors_origins(cors_origins_env)
+    allow_credentials_env = os.getenv("CORS_ALLOW_CREDENTIALS", "true")
+    allow_credentials = parse_boolean_env(allow_credentials_env, True)
+
+    # SECURITY: Wildcard origins cannot use credentials - detect ANY wildcard presence
+    # Ignore empty-origin case and only disable credentials for true wildcard
+    if allow_origins and "*" in allow_origins and allow_credentials:
+        logging.getLogger("testinsight").warning(
+            "CORS credentials disabled due to wildcard origin (*). Specify explicit origins to enable credentials."
+        )
+        allow_credentials = False
+
+    # Remove existing CORSMiddleware to make this function idempotent
+    app.user_middleware = [m for m in app.user_middleware if m.cls is not CORSMiddleware]
+
+    # Reset middleware stack to allow adding new middleware
+    app.middleware_stack = None
+
+    # Register CORS middleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allow_origins,
+        allow_credentials=allow_credentials,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # Rebuild stack explicitly to ensure idempotent, up-to-date middleware chain
+    app.middleware_stack = app.build_middleware_stack()
 
 
 # Optional global error handler (env gated) while preserving default FastAPI behavior otherwise
-if os.getenv("ENABLE_GLOBAL_ERROR_HANDLER", "false").lower() == "true":
+if parse_boolean_env(os.getenv("ENABLE_GLOBAL_ERROR_HANDLER"), False):
 
     async def error_middleware(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         try:
@@ -83,15 +241,6 @@ async def security_headers(request: Request, call_next: Callable[[Request], Awai
 # Include API routes
 app.include_router(router, prefix="/api/v1")
 
-# Register CORS last so it wraps error responses as well
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allow_origins,
-    allow_credentials=allow_credentials,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 
 @app.get("/")
 async def root() -> dict[str, str]:
@@ -110,5 +259,5 @@ if __name__ == "__main__":
         "backend.main:app",
         host=os.getenv("HOST", "0.0.0.0"),
         port=int(os.getenv("PORT", 8000)),
-        reload=os.getenv("DEBUG", "false").lower() == "true",
+        reload=parse_boolean_env(os.getenv("DEBUG"), False),
     )

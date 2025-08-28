@@ -1,5 +1,8 @@
 """Service client creators for TestInsight AI."""
 
+import re
+from urllib.parse import urlparse
+
 from backend.services.ai_analyzer import AIAnalyzer
 from backend.services.gemini_api import GeminiClient
 from backend.services.git_client import GitClient
@@ -37,10 +40,10 @@ class ServiceClientCreators(BaseServiceConfig):
         getters = ServiceConfigGetters()
         config = getters.get_jenkins_config()
 
-        final_url = url or config["url"]
-        final_username = username or config["username"]
-        final_password = password or config["password"]
-        final_verify_ssl = verify_ssl if verify_ssl is not None else config["verify_ssl"]
+        final_url = url if url is not None else config.get("url")
+        final_username = username if username is not None else config.get("username")
+        final_password = password if password is not None else config.get("password")
+        final_verify_ssl = verify_ssl if verify_ssl is not None else config.get("verify_ssl")
 
         if not isinstance(final_url, str) or not isinstance(final_username, str) or not isinstance(final_password, str):
             raise ValueError("Jenkins configuration contains invalid types")
@@ -48,7 +51,10 @@ class ServiceClientCreators(BaseServiceConfig):
         if not isinstance(final_verify_ssl, bool):
             raise ValueError("Jenkins verify_ssl configuration must be boolean")
 
-        # Check if we have all required configuration values
+        # Normalize inputs and check required fields
+        final_url = final_url.strip()
+        final_username = final_username.strip()
+        final_password = final_password.strip()
         if not final_url or not final_username or not final_password:
             raise ValueError(
                 "Jenkins is not configured. Please provide URL, username, and API token in settings or as parameters."
@@ -74,12 +80,11 @@ class ServiceClientCreators(BaseServiceConfig):
         getters = ServiceConfigGetters()
         config = getters.get_ai_config()
 
-        final_api_key = api_key if api_key is not None else config["api_key"]
-
+        final_api_key = api_key if api_key is not None else config.get("api_key")
         if not isinstance(final_api_key, str):
-            raise TypeError("API key must be a string.")
-
-        if not final_api_key or not final_api_key.strip():
+            raise ValueError("API key must be a string.")
+        final_api_key = final_api_key.strip()
+        if not final_api_key:
             raise ValueError(
                 "AI service is not configured. Please provide a Gemini API key in settings or as parameter."
             )
@@ -90,13 +95,18 @@ class ServiceClientCreators(BaseServiceConfig):
         max_tokens = config.get("max_tokens")
 
         default_model = model if isinstance(model, str) and model else "gemini-2.5-pro"
-        # Tolerate numeric strings from forms
+        # Tolerate numeric strings from forms and clamp to safe ranges
         try:
-            default_temperature = float(temperature) if temperature is not None else 0.7
+            parsed_temperature = float(temperature) if temperature is not None else 0.7
+            # Clamp temperature to valid range [0.0, 1.0] to prevent model instability
+            default_temperature = max(0.0, min(1.0, parsed_temperature))
         except (TypeError, ValueError):
             default_temperature = 0.7
+
         try:
-            default_max_tokens = int(max_tokens) if max_tokens is not None else 4096
+            parsed_max_tokens = int(max_tokens) if max_tokens is not None else 4096
+            # Clamp max_tokens to reasonable range [1, 32768] to prevent excessive costs/timeouts
+            default_max_tokens = max(1, min(32768, parsed_max_tokens))
         except (TypeError, ValueError):
             default_max_tokens = 4096
 
@@ -127,13 +137,30 @@ class ServiceClientCreators(BaseServiceConfig):
             ValueError: If repo_url is not provided
             GitRepositoryError: If cloning fails
         """
-        if not repo_url:
+        if not repo_url or not str(repo_url).strip():
             raise ValueError("repo_url is required for GitClient")
+
+        # Allow only https://, ssh:// or scp-like git URLs (user@host:path)
+        repo_url = repo_url.strip()
+        if re.search(r"\s", repo_url):
+            raise ValueError("Invalid repository URL; whitespace is not allowed.")
+        p = urlparse(repo_url)
+        path_non_empty = bool(p.path and p.path.strip("/"))
+        is_http_ssh = bool(p.scheme in ("https", "ssh") and p.netloc and path_non_empty)
+        # Reject embedded credentials to avoid secret leakage (e.g., https://token@host/owner/repo)
+        # Exception: SSH URLs commonly use 'git@' which is not a credential
+        if is_http_ssh and (p.password or (p.username and p.username != "git")):
+            raise ValueError("Invalid repository URL; embedded credentials are not allowed.")
+        # Require at least one slash in the scp-like path (owner/repo)
+        is_scp_like = re.fullmatch(r"[^\s@]+@[^\s:]+:[^\s/]+/[^\s]+", repo_url) is not None
+        if not (is_http_ssh or is_scp_like):
+            raise ValueError("Invalid repository URL; only https://, ssh://, or scp-like formats allowed.")
 
         # Prefer provided args over config
         getters = ServiceConfigGetters()
         config = getters.get_github_config()
 
-        final_token = github_token or config["token"]
+        # Treat blank strings as missing and fall back to settings
+        final_token = github_token if (github_token is not None and str(github_token).strip()) else config.get("token")
 
         return GitClient(repo_url=repo_url, branch=branch, commit=commit, github_token=final_token)

@@ -1,10 +1,29 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useSettings, AppSettings, SettingsUpdate, ConnectionTestResult } from '../contexts/SettingsContext';
+import { useSettings, AppSettings, SettingsUpdate, ConnectionTestResult, defaultSettings } from '../contexts/SettingsContext';
 import { validateGeminiApiKey, fetchGeminiModels, getSecretsStatus, testConnectionWithConfig } from '../services/api';
+
+// Normalize API base URL to avoid double slashes and support relative URLs
+const normalizeApiUrl = (url: string) => {
+  if (!url) return 'http://localhost:8000';
+  return url.replace(/\/+$/, ''); // Remove trailing slashes
+};
+
+const API_BASE_URL = normalizeApiUrl((import.meta as any).env?.VITE_API_URL || 'http://localhost:8000');
 
 interface FormErrors {
   [key: string]: string;
+}
+
+interface AIModel {
+  name: string;
+  displayName?: string;
+  display_name?: string;  // Backend may return snake_case
+  description?: string;
+  temperature?: number;
+  topK?: number;
+  topP?: number;
+  maxOutputTokens?: number;
 }
 
 interface ConnectionStatus {
@@ -39,6 +58,7 @@ const Settings: React.FC = () => {
     settings,
     loading,
     error,
+    fetchSettings,
     updateSettings,
     resetSettings,
     testConnection,
@@ -46,8 +66,8 @@ const Settings: React.FC = () => {
     restoreSettings,
   } = useSettings();
 
-  const [formData, setFormData] = useState<AppSettings | null>(null);
-  const [originalSettings, setOriginalSettings] = useState<AppSettings | null>(null);
+  const [formData, setFormData] = useState<AppSettings>(defaultSettings);
+  const [originalSettings, setOriginalSettings] = useState<AppSettings>(defaultSettings);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -67,7 +87,7 @@ const Settings: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'jenkins' | 'github' | 'ai'>(getActiveTabFromUrl());
 
   // AI models state
-  const [availableModels, setAvailableModels] = useState<any[]>([]);
+  const [availableModels, setAvailableModels] = useState<AIModel[]>([]);
   const [secretsStatus, setSecretsStatus] = useState<Record<string, Record<string, boolean>>>({});
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
@@ -102,23 +122,23 @@ const Settings: React.FC = () => {
   // Initialize form data when settings are loaded
   useEffect(() => {
     if (settings) {
-      // Clear masked values from sensitive fields for form display
+      // Never echo secrets into form fields for security
       const validatedSettings = {
         ...settings,
         jenkins: {
           ...settings.jenkins,
-          // Clear masked API token so placeholder shows
-          api_token: settings.jenkins.api_token?.includes('...') ? '' : settings.jenkins.api_token,
+          // Do not render secrets back into inputs
+          api_token: '',
         },
         github: {
           ...settings.github,
-          // Clear masked token so placeholder shows
-          token: settings.github.token?.includes('...') ? '' : settings.github.token,
+          // Do not render secrets back into inputs
+          token: '',
         },
         ai: {
           ...settings.ai,
-          // Clear masked API key so placeholder shows
-          gemini_api_key: settings.ai.gemini_api_key?.includes('...') ? '' : settings.ai.gemini_api_key,
+          // Do not render secrets back into inputs
+          gemini_api_key: '',
           // Keep model as provided in settings
           model: settings.ai.model || '',
         }
@@ -244,7 +264,7 @@ const Settings: React.FC = () => {
 
   // Utility function to check if API key is valid format
   const isValidApiKeyFormat = (apiKey: string): boolean => {
-    return apiKey.startsWith('AIzaSy') && apiKey.length === 39;
+    return typeof apiKey === 'string' && apiKey.trim().length > 0; // basic presence check  // pragma: allowlist secret
   };
 
   // Handle tab change with URL update
@@ -291,11 +311,12 @@ const Settings: React.FC = () => {
       } else {
         // Use backend endpoint to fetch models with saved settings
         try {
-          const response = await fetch(`${(import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'}/api/v1/ai/models`, {
+          const response = await fetch(`${API_BASE_URL}/api/v1/ai/models`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
+            credentials: 'include',
           });
 
           if (!response.ok) {
@@ -357,11 +378,12 @@ const Settings: React.FC = () => {
     if (!isValidApiKeyFormat(apiKey)) {
       return {
         success: false,
-        error: 'API key must start with "AIzaSy" and be 39 characters long'
+        error: 'API key is required'
       };
     }
 
     try {
+      setApiKeyValidating(true);
       // First validate the API key
       const validation = await validateGeminiApiKey(apiKey);
 
@@ -383,6 +405,8 @@ const Settings: React.FC = () => {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to fetch models'
       };
+    } finally {
+      setApiKeyValidating(false);
     }
   }, []);
 
@@ -424,8 +448,6 @@ const Settings: React.FC = () => {
     if (!formData) return;
 
     setFormData(prev => {
-      if (!prev) return null;
-
       const currentSection = prev[section] as Record<string, any>;
 
       return {
@@ -456,15 +478,22 @@ const Settings: React.FC = () => {
       } else if (section === 'github' && newStatus.github) {
         newStatus.github = { ...newStatus.github, tested: false, result: undefined };
       } else if (section === 'ai' && newStatus.ai) {
-        // Only clear connection status when API key changes, not when model selection changes
-        if (field === 'gemini_api_key' && value && value.trim() !== '') {
-          // Mark that user entered a new API key
-          setUserEnteredNewApiKey(true);
-          setAttemptedAutoLoad(false);
-          // Only clear models if a new non-empty API key is being entered
-          newStatus.ai = { ...newStatus.ai, tested: false, result: undefined };
-          setAvailableModels([]);
-          setModelsError(null);
+        // Handle API key changes
+        if (field === 'gemini_api_key') {
+          if (value && value.trim() !== '') {
+            // Mark that user entered a new API key
+            setUserEnteredNewApiKey(true);
+            setAttemptedAutoLoad(false);
+            // Clear models when new API key is being entered
+            newStatus.ai = { ...newStatus.ai, tested: false, result: undefined };
+            setAvailableModels([]);
+            setModelsError(null);
+          } else if (!secretsStatus?.ai?.gemini_api_key) {
+            // API key field is cleared and no saved key exists - clear models
+            setAvailableModels([]);
+            setModelsError(null);
+            newStatus.ai = { ...newStatus.ai, tested: false, result: undefined };
+          }
         }
       }
       return newStatus;
@@ -482,10 +511,28 @@ const Settings: React.FC = () => {
     setSuccessMessage(null);
 
     try {
+      // Build update payload, excluding empty secret fields to prevent clearing stored secrets
       const update: SettingsUpdate = {
-        jenkins: formData.jenkins,
-        github: formData.github,
-        ai: formData.ai,
+        jenkins: {
+          // Copy non-secret fields first
+          url: formData.jenkins.url,
+          username: formData.jenkins.username,
+          verify_ssl: formData.jenkins.verify_ssl,
+          // Only include api_token if user provided a non-empty value
+          ...(formData.jenkins.api_token?.trim() ? { api_token: formData.jenkins.api_token } : {})
+        },
+        github: {
+          // Only include token if user provided a non-empty value
+          ...(formData.github.token?.trim() ? { token: formData.github.token } : {})
+        },
+        ai: {
+          // Copy non-secret fields first
+          model: formData.ai.model,
+          temperature: formData.ai.temperature,
+          max_tokens: formData.ai.max_tokens,
+          // Only include gemini_api_key if user provided a non-empty value
+          ...(formData.ai.gemini_api_key?.trim() ? { gemini_api_key: formData.ai.gemini_api_key } : {})
+        },
       };
 
       await updateSettings(update);
@@ -530,20 +577,20 @@ const Settings: React.FC = () => {
       const savedConnectionStatus = connectionStatus;
       const savedModelsError = modelsError;
 
-      // Set a flag to indicate we just saved, so we can restore state after settings reload
-      setTimeout(() => {
-        if (savedModels.length > 0 && !userEnteredNewApiKey) {
-          // Restore models if they existed and user didn't enter a new API key
-          setAvailableModels(savedModels);
-          setModelsError(savedModelsError);
-          setConnectionStatus(prev => ({
-            ...prev,
-            ai: savedConnectionStatus.ai || prev.ai
-          }));
-        }
-        // Reset the flag after restoration
-        setUserEnteredNewApiKey(false);
-      }, 100); // Small delay to let settings reload complete
+      // Reload settings explicitly and then restore view state
+      await fetchSettings();
+
+      if (savedModels.length > 0 && !userEnteredNewApiKey) {
+        // Restore models if they existed and user didn't enter a new API key
+        setAvailableModels(savedModels);
+        setModelsError(savedModelsError);
+        setConnectionStatus(prev => ({
+          ...prev,
+          ai: savedConnectionStatus.ai || prev.ai
+        }));
+      }
+      // Reset the flag after restoration
+      setUserEnteredNewApiKey(false);
     } catch (err) {
       // Error is handled by the context - additional safety check
       if (err && typeof err === 'object' && 'message' in err && typeof (err as any).message === 'string') {
@@ -642,11 +689,12 @@ const Settings: React.FC = () => {
         return result;
       } else {
         // No new token provided – test using existing configured settings on the backend
-        const response = await fetch(`${(import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'}/api/v1/settings/test-connection?service=jenkins`, {
+        const response = await fetch(`${API_BASE_URL}/api/v1/settings/test-connection?service=jenkins`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
+          credentials: 'include',
         });
 
         const result = await response.json();
@@ -684,11 +732,12 @@ const Settings: React.FC = () => {
         return result;
       } else {
         // Test with existing configured settings
-        const response = await fetch(`${(import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'}/api/v1/settings/test-connection?service=github`, {
+        const response = await fetch(`${API_BASE_URL}/api/v1/settings/test-connection?service=github`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
+          credentials: 'include',
         });
 
         const result = await response.json();
@@ -740,11 +789,12 @@ const Settings: React.FC = () => {
         };
 
         try {
-          const response = await fetch(`${(import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'}/api/v1/settings/test-connection-with-config`, {
+          const response = await fetch(`${API_BASE_URL}/api/v1/settings/test-connection-with-config`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
+            credentials: 'include',
             body: JSON.stringify({
               service: 'ai',
               config: aiFormData
@@ -770,11 +820,12 @@ const Settings: React.FC = () => {
       } else {
         // Test with existing configured settings (use backend endpoint)
         try {
-          const response = await fetch(`${(import.meta as any).env?.VITE_API_URL || 'http://localhost:8000'}/api/v1/settings/test-connection?service=ai`, {
+          const response = await fetch(`${API_BASE_URL}/api/v1/settings/test-connection?service=ai`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
+            credentials: 'include',
           });
 
           const result = await response.json();
@@ -803,18 +854,15 @@ const Settings: React.FC = () => {
         setModelsError(null);
 
         // Update model if current selection is not available
-        const modelNames = modelsResult.models.map((model: any) => model.name);
+        const modelNames = modelsResult.models.map((model: AIModel) => model.name);
         if (!modelNames.includes(aiConfig.model) && modelsResult.models.length > 0) {
-          setFormData(prev => {
-            if (!prev) return null;
-            return {
-              ...prev,
-              ai: {
-                ...prev.ai,
-                model: modelsResult.models![0].name,
-              },
-            };
-          });
+          setFormData(prev => ({
+            ...prev,
+            ai: {
+              ...prev.ai,
+              model: modelsResult.models![0].name,
+            },
+          }));
         }
 
         return {
@@ -890,6 +938,10 @@ const Settings: React.FC = () => {
       if (fileInput) {
         fileInput.value = '';
       }
+      // Refresh settings and secrets status after restore
+      await fetchSettings();
+      const status = await getSecretsStatus();
+      setSecretsStatus(status);
     } catch (err) {
       console.error('Restore failed:', err);
       setErrorMessage(err instanceof Error ? err.message : 'Failed to restore settings');
@@ -940,23 +992,38 @@ const Settings: React.FC = () => {
     return null;
   };
 
-  if (loading && !formData) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 dark:border-primary-400"></div>
-        <span className="ml-3 text-gray-600 dark:text-gray-400">Loading settings...</span>
-      </div>
-    );
-  }
+  const [loadingStartedAt, setLoadingStartedAt] = useState<number | null>(null);
+  const [stalled, setStalled] = useState(false);
+  const timeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  if (!formData) {
-    return (
-      <div className="p-8 text-center">
-        <div className="text-red-600 dark:text-red-400">Failed to load settings</div>
-        {error && <div className="text-sm text-gray-600 dark:text-gray-400 mt-2">{error}</div>}
-      </div>
-    );
-  }
+  // Track loading start time and stalled state
+  useEffect(() => {
+    if (loading) {
+      // Loading started - track start time and set stalled timer
+      if (loadingStartedAt === null) {
+        setLoadingStartedAt(Date.now());
+        timeoutIdRef.current = setTimeout(() => {
+          setStalled(true);
+        }, 10000);
+      }
+    } else {
+      // Loading stopped - reset everything
+      setLoadingStartedAt(null);
+      setStalled(false);
+      if (timeoutIdRef.current) {
+        clearTimeout(timeoutIdRef.current);
+        timeoutIdRef.current = null;
+      }
+    }
+
+    // Cleanup timeout on unmount
+    return () => {
+      if (timeoutIdRef.current) {
+        clearTimeout(timeoutIdRef.current);
+        timeoutIdRef.current = null;
+      }
+    };
+  }, [loading]); // Only depend on loading, not loadingStartedAt
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
@@ -969,6 +1036,26 @@ const Settings: React.FC = () => {
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                 Configure your TestInsight AI application settings
               </p>
+              {loading && (
+                <div className="mt-2 flex items-center gap-3">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary-600 dark:border-primary-400"></div>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Loading saved settings…</span>
+                  {stalled && (
+                    <button
+                      type="button"
+                      onClick={() => fetchSettings()}
+                      className="px-2 py-1 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
+                    >
+                      Retry
+                    </button>
+                  )}
+                </div>
+              )}
+              {error && (
+                <div className="mt-2 text-sm text-amber-600 dark:text-amber-400">
+                  Failed to load saved settings. You can still edit and save below.
+                </div>
+              )}
             </div>
             <div className="flex flex-col sm:flex-row gap-3">
               {/* Backup/Restore Section */}
@@ -1278,7 +1365,7 @@ const Settings: React.FC = () => {
                       <div className="flex gap-2">
                         <div className="relative flex-1">
                           <select
-                            value={formData.ai.model}
+                            value={modelsLoading ? '' : formData.ai.model}
                             onChange={(e) => handleInputChange('ai', 'model', e.target.value)}
                             disabled={!availableModels.length || modelsLoading}
                             className={`mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:border-primary-500 focus:ring-primary-500 ${
@@ -1289,11 +1376,11 @@ const Settings: React.FC = () => {
                               <option value="">No models available</option>
                             )}
                             {modelsLoading && (
-                              <option value="gemini-pro">Loading models...</option>
+                              <option value="">Loading models...</option>
                             )}
                             {availableModels.map((model) => (
                               <option key={model.name} value={model.name}>
-                                {model.display_name || model.name}
+                                {model.displayName || model.display_name || model.name}
                               </option>
                             ))}
                           </select>

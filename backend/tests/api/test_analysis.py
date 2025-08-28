@@ -82,6 +82,138 @@ def test_analyze_with_repo_clone_failure(client: TestClient):
         assert response.status_code == 200
 
 
+def test_analyze_secret_leak_prevention(client: TestClient):
+    """Test that clone failure warnings don't leak credentials in analysis text."""
+    with patch("backend.api.routers.analysis.ServiceClientCreators") as mock_service_config:
+        with patch("backend.api.routers.analysis.logger") as mock_logger:
+            mock_ai_analyzer = Mock()
+            mock_analysis = Mock()
+            mock_analysis.summary = "Summary"
+            mock_analysis.recommendations = []
+            mock_analysis.insights = []
+            mock_ai_analyzer.analyze_test_results.return_value = mock_analysis
+            mock_service_config.return_value.create_configured_ai_client.return_value = mock_ai_analyzer
+            mock_service_config.return_value.create_configured_git_client.side_effect = Exception("Clone failed")
+
+            # Use a repo URL with credentials
+            sensitive_repo_url = "https://token123:secret456@github.com/fake/repo.git"
+
+            response = client.post(
+                "/api/v1/analyze",
+                data={
+                    "text": "fake test results",
+                    "repository_url": sensitive_repo_url,
+                    "include_repository_context": "true",
+                },
+            )
+
+            assert response.status_code == 200
+
+            # Verify that warning was logged
+            mock_logger.warning.assert_called_once()
+
+            # Get the logged warning message
+            warning_call_args = mock_logger.warning.call_args[0]
+            logged_message = warning_call_args[0]
+
+            # Assert that credentials are not leaked in the warning
+            assert "token123" not in logged_message
+            assert "secret456" not in logged_message
+            assert "Repository cloning failed for url=" in logged_message
+            # Should have redacted URL
+            assert "***" in warning_call_args[1]  # The redacted URL parameter
+
+            # Ensure secrets are not present in any logged args
+            all_args_str = " ".join(map(str, mock_logger.warning.call_args[0]))
+            assert "token123" not in all_args_str
+            assert "secret456" not in all_args_str
+
+            # Ensure secrets are not surfaced back to the client
+            summary = response.json()["summary"]
+            assert "token123" not in summary
+            assert "secret456" not in summary
+
+
+def test_analyze_repo_limits_validation(client: TestClient):
+    """Test 422 responses for invalid repo limit bounds across endpoints."""
+
+    # Test analyze endpoint
+    # Invalid repo_max_files (too low)
+    response = client.post(
+        "/api/v1/analyze",
+        data={"text": "fake test results", "repo_max_files": "0"},
+    )
+    assert response.status_code == 422
+    assert "repo_max_files must be between 1 and 500" in response.json()["detail"]
+
+    # Invalid repo_max_files (too high)
+    response = client.post(
+        "/api/v1/analyze",
+        data={"text": "fake test results", "repo_max_files": "1000"},
+    )
+    assert response.status_code == 422
+    assert "repo_max_files must be between 1 and 500" in response.json()["detail"]
+
+    # Invalid repo_max_bytes (too low)
+    response = client.post(
+        "/api/v1/analyze",
+        data={"text": "fake test results", "repo_max_bytes": "500"},
+    )
+    assert response.status_code == 422
+    assert "repo_max_bytes must be between 1KB and 2MB" in response.json()["detail"]
+
+    # Invalid repo_max_bytes (too high)
+    response = client.post(
+        "/api/v1/analyze",
+        data={"text": "fake test results", "repo_max_bytes": "3000000"},
+    )
+    assert response.status_code == 422
+    assert "repo_max_bytes must be between 1KB and 2MB" in response.json()["detail"]
+
+
+def test_analyze_file_repo_limits_validation(client: TestClient):
+    """Test 422 responses for invalid repo limit bounds in file endpoint."""
+    files = {"files": ("test.xml", "<testsuite/>", "application/xml")}
+
+    # Invalid repo_max_files
+    response = client.post(
+        "/api/v1/analyze/file",
+        files=files,
+        data={"repo_max_files": "0"},
+    )
+    assert response.status_code == 422
+    assert "repo_max_files must be between 1 and 500" in response.json()["detail"]
+
+    # Invalid repo_max_bytes
+    response = client.post(
+        "/api/v1/analyze/file",
+        files=files,
+        data={"repo_max_bytes": "500"},
+    )
+    assert response.status_code == 422
+    assert "repo_max_bytes must be between 1KB and 2MB" in response.json()["detail"]
+
+
+def test_analyze_jenkins_repo_limits_validation(client: TestClient):
+    """Test 422 responses for invalid repo limit bounds in Jenkins endpoint."""
+
+    # Invalid repo_max_files
+    response = client.post(
+        "/api/v1/analyze/jenkins",
+        data={"job_name": "test-job", "repo_max_files": "600"},
+    )
+    assert response.status_code == 422
+    assert "repo_max_files must be between 1 and 500" in response.json()["detail"]
+
+    # Invalid repo_max_bytes
+    response = client.post(
+        "/api/v1/analyze/jenkins",
+        data={"job_name": "test-job", "repo_max_bytes": "100"},
+    )
+    assert response.status_code == 422
+    assert "repo_max_bytes must be between 1KB and 2MB" in response.json()["detail"]
+
+
 def test_analyze_file_success(client: TestClient):
     """Test successful file analysis."""
     with patch("backend.api.routers.analysis.ServiceClientCreators") as mock_service_config:

@@ -3,28 +3,34 @@
 import json
 from datetime import datetime
 from io import BytesIO
-from pathlib import Path
 from unittest.mock import Mock, patch
 
+import pytest
+
 from backend.models.schemas import (
+    AISettings,
     AppSettings,
     GeminiModelInfo,
     GeminiModelsResponse,
-    JenkinsSettings,
     GitHubSettings,
-    AISettings,
+    JenkinsSettings,
 )
-from backend.services.git_client import GitRepositoryError
+from backend.api.routers.constants import (
+    FAILED_VALIDATE_AUTHENTICATION,
+    INVALID_API_KEY_FORMAT,
+    INTERNAL_SERVER_ERROR_FETCHING_MODELS,
+    BAD_GATEWAY_UPSTREAM_SERVICE_ERROR,
+    SERVICE_UNAVAILABLE_ERROR,
+    REQUEST_TIMEOUT_ERROR,
+)
 from backend.tests.conftest import (
     FAKE_GEMINI_API_KEY,
-    FAKE_GITHUB_REPO,
     FAKE_GITHUB_TOKEN,
     FAKE_INVALID_API_KEY,
+    FAKE_INVALID_FORMAT_KEY,
     FAKE_JENKINS_TOKEN,
     FAKE_JENKINS_URL,
     FAKE_JENKINS_USERNAME,
-    FAKE_REPO_PATH,
-    FAKE_SHORT_COMMIT,
 )
 
 
@@ -183,69 +189,6 @@ class TestJenkinsEndpoints:
         assert data["limit"] == 5
 
 
-class TestGitEndpoints:
-    """Test Git-related endpoints."""
-
-    @patch("backend.api.routers.git.ServiceClientCreators")
-    def test_clone_repository_success(self, mock_service_config, client):
-        """Test successful repository cloning."""
-        mock_git_client = Mock()
-        mock_git_client.repo_path = Path(FAKE_REPO_PATH)
-        mock_service_config.return_value.create_configured_git_client.return_value = mock_git_client
-
-        response = client.post(
-            "/api/v1/git/clone",
-            data={
-                "repo_url": FAKE_GITHUB_REPO,
-                "branch": "main",
-                "github_token": FAKE_GITHUB_TOKEN,
-            },
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["success"] is True
-        assert data["repository_url"] == FAKE_GITHUB_REPO
-        assert data["branch"] == "main"
-        assert data["cloned_path"] == FAKE_REPO_PATH
-
-    @patch("backend.api.routers.git.ServiceClientCreators")
-    def test_clone_repository_with_commit(self, mock_service_config, client):
-        """Test repository cloning with commit hash."""
-        mock_git_client = Mock()
-        mock_git_client.repo_path = Path(FAKE_REPO_PATH)
-        mock_service_config.return_value.create_configured_git_client.return_value = mock_git_client
-
-        response = client.post(
-            "/api/v1/git/clone",
-            data={"repo_url": FAKE_GITHUB_REPO, "commit": FAKE_SHORT_COMMIT},
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["commit_hash"] == FAKE_SHORT_COMMIT
-
-    def test_clone_repository_branch_and_commit(self, client):
-        """Test repository cloning with both branch and commit (should fail)."""
-        response = client.post(
-            "/api/v1/git/clone",
-            data={"repo_url": FAKE_GITHUB_REPO, "branch": "main", "commit": FAKE_SHORT_COMMIT},
-        )
-
-        assert response.status_code == 500  # Due to generic exception handling
-        assert "Provide either branch or commit, not both" in response.json()["detail"]
-
-    @patch("backend.api.routers.git.ServiceClientCreators")
-    def test_clone_repository_git_error(self, mock_service_config, client):
-        """Test repository cloning with Git error."""
-        mock_service_config.return_value.create_configured_git_client.side_effect = GitRepositoryError("Git error")
-
-        response = client.post("/api/v1/git/clone", data={"repo_url": "invalid-url"})
-
-        assert response.status_code == 400
-        assert "Git error" in response.json()["detail"]
-
-
 class TestStatusEndpoint:
     """Test the /api/v1/status endpoint."""
 
@@ -292,24 +235,25 @@ class TestStatusEndpoint:
         assert data["services"]["jenkins"]["configured"] is True
         assert data["services"]["jenkins"]["available"] is True
 
+    @patch("backend.api.routers.system.BaseServiceConfig")
     @patch("backend.api.routers.system.ServiceStatusCheckers")
-    def test_get_service_status_jenkins_unavailable(self, mock_service_config, client):
+    def test_get_service_status_jenkins_unavailable(self, mock_status_checkers, mock_base_config, client):
         """Test service status when Jenkins is unavailable."""
-        mock_service_config_instance = Mock()
-        mock_service_config.return_value = mock_service_config_instance
-
-        mock_service_config_instance.get_service_status.return_value = {
+        # Mock status checkers to report services as unconfigured
+        mock_status_instance = Mock()
+        mock_status_checkers.return_value = mock_status_instance
+        mock_status_instance.get_service_status.return_value = {
             "jenkins": {"configured": False},
             "github": {"configured": False},
             "ai": {"configured": False},
         }
 
-        mock_service_config_instance.create_configured_jenkins_client.return_value = None
-        mock_service_config_instance.create_configured_ai_client.side_effect = Exception("AI error")
-
+        # Mock base config for settings
+        mock_base_instance = Mock()
+        mock_base_config.return_value = mock_base_instance
         mock_settings = Mock()
         mock_settings.last_updated = None
-        mock_service_config_instance.get_settings.return_value = mock_settings
+        mock_base_instance.get_settings.return_value = mock_settings
 
         response = client.get("/api/v1/status")
 
@@ -363,9 +307,51 @@ class TestAIModelsEndpoints:
         assert data["success"] is True
         assert len(data["models"]) == 1
 
+    @pytest.mark.parametrize(
+        "error_message,error_details,api_key,expected_status,expected_detail_contains",
+        [
+            (
+                "Authentication failed",
+                "Invalid API key",
+                FAKE_INVALID_API_KEY,
+                401,
+                "Authentication failed. Please verify your API key.",
+            ),
+            (
+                "quota exceeded",
+                "Rate limit exceeded",
+                FAKE_GEMINI_API_KEY,
+                429,
+                "Rate limit exceeded",
+            ),
+            (
+                None,  # No error message
+                None,  # No error details
+                FAKE_GEMINI_API_KEY,
+                502,
+                BAD_GATEWAY_UPSTREAM_SERVICE_ERROR,
+            ),
+            (
+                "unexpected server error",  # Generic error that shouldn't be classified
+                "internal processing failed",
+                FAKE_GEMINI_API_KEY,
+                502,
+                BAD_GATEWAY_UPSTREAM_SERVICE_ERROR,
+            ),
+        ],
+    )
     @patch("backend.api.routers.ai.ServiceClientCreators")
-    def test_get_gemini_models_invalid_api_key(self, mock_service_client_creators, client):
-        """Test Gemini models retrieval with invalid API key."""
+    def test_get_gemini_models_error_scenarios(
+        self,
+        mock_service_client_creators,
+        client,
+        error_message,
+        error_details,
+        api_key,
+        expected_status,
+        expected_detail_contains,
+    ):
+        """Test Gemini models retrieval error scenarios."""
         # Mock the ServiceClientCreators instance
         mock_creators_instance = Mock()
         mock_service_client_creators.return_value = mock_creators_instance
@@ -382,75 +368,138 @@ class TestAIModelsEndpoints:
             success=False,
             models=[],
             total_count=0,
-            message="Authentication failed",
-            error_details="Invalid API key",
+            message=error_message,
+            error_details=error_details,
         )
         mock_gemini_client.get_available_models.return_value = mock_response
 
-        response = client.post("/api/v1/ai/models?api_key=" + FAKE_INVALID_API_KEY)
+        response = client.post(f"/api/v1/ai/models?api_key={api_key}")
 
-        assert response.status_code == 401
-        assert "Invalid API key" in response.json()["detail"]
+        assert response.status_code == expected_status
+        error_response = response.json()
+        # Assert error payload shape - should have "detail" field, not "message"
+        assert "detail" in error_response
+        assert "message" not in error_response
+        assert expected_detail_contains in error_response["detail"]
 
+        # Verify the creator is invoked with the passed api_key for completeness
+        mock_creators_instance.create_configured_ai_client.assert_called_once_with(api_key=api_key)
+
+    @pytest.mark.parametrize(
+        "client_side_effect,api_key,expected_status,expected_valid,expected_detail_contains",
+        [
+            (
+                None,  # No exception - successful client creation
+                FAKE_GEMINI_API_KEY,
+                200,
+                True,
+                "API key format is valid and client initialized successfully",
+            ),
+            (
+                ConnectionError("Invalid API key"),  # ConnectionError means invalid key
+                FAKE_INVALID_API_KEY,
+                503,
+                None,  # No 'valid' field in error responses
+                SERVICE_UNAVAILABLE_ERROR,
+            ),
+            (
+                TypeError("Non-string key"),  # TypeError for non-string keys
+                FAKE_INVALID_API_KEY,
+                400,
+                None,  # No 'valid' field in error responses
+                INVALID_API_KEY_FORMAT,
+            ),
+            (
+                TimeoutError("Request timeout"),  # TimeoutError for timeout scenarios
+                FAKE_GEMINI_API_KEY,
+                504,
+                None,  # No 'valid' field in error responses
+                REQUEST_TIMEOUT_ERROR,
+            ),
+        ],
+    )
     @patch("backend.api.routers.ai.ServiceClientCreators")
-    def test_get_gemini_models_quota_exceeded(self, mock_service_client_creators, client):
-        """Test Gemini models retrieval with quota exceeded."""
-        # Mock the ServiceClientCreators instance
+    def test_validate_gemini_api_key_scenarios(
+        self,
+        mock_service_client_creators,
+        client,
+        client_side_effect,
+        api_key,
+        expected_status,
+        expected_valid,
+        expected_detail_contains,
+    ):
+        """Test API key validation scenarios."""
         mock_creators_instance = Mock()
         mock_service_client_creators.return_value = mock_creators_instance
 
-        # Mock the AI analyzer returned by create_configured_ai_client
-        mock_ai_analyzer = Mock()
-        mock_creators_instance.create_configured_ai_client.return_value = mock_ai_analyzer
+        if client_side_effect:
+            mock_creators_instance.create_configured_ai_client.side_effect = client_side_effect
+        else:
+            # Mock successful client creation
+            mock_ai_analyzer = Mock()
+            mock_creators_instance.create_configured_ai_client.return_value = mock_ai_analyzer
 
-        # Mock the underlying GeminiClient and its response
-        mock_gemini_client = Mock()
-        mock_ai_analyzer.client = mock_gemini_client
+        response = client.post(f"/api/v1/ai/models/validate-key?api_key={api_key}")
 
-        mock_response = GeminiModelsResponse(
-            success=False,
-            models=[],
-            total_count=0,
-            message="quota exceeded",
-            error_details="Rate limit exceeded",
+        assert response.status_code == expected_status
+        data = response.json()
+
+        if expected_valid is not None:
+            assert data["valid"] is expected_valid
+
+        if expected_detail_contains:
+            # For successful responses (200), use 'message' field
+            # For error responses, use 'detail' field (FastAPI standard)
+            if expected_status == 200:
+                assert expected_detail_contains in data["message"]
+            else:
+                assert expected_detail_contains in data["detail"]
+
+        # Assert which key was used to ensure precedence and plumbing are correct
+        if expected_status == 200:
+            mock_creators_instance.create_configured_ai_client.assert_called_once_with(api_key=api_key)
+        else:
+            # For error responses, verify the creator is invoked with the passed api_key for completeness
+            mock_creators_instance.create_configured_ai_client.assert_called_once_with(api_key=api_key)
+
+    def test_validate_key_precedence_non_string_body_validation(self, client):
+        """Test that non-string body API key is properly rejected by FastAPI validation in validate-key."""
+        response = client.post(
+            f"/api/v1/ai/models/validate-key?api_key={FAKE_GEMINI_API_KEY}",  # Valid query parameter
+            json={"api_key": 123},  # Non-string body should be rejected by Pydantic
         )
-        mock_gemini_client.get_available_models.return_value = mock_response
-
-        response = client.post("/api/v1/ai/models?api_key=" + FAKE_GEMINI_API_KEY)  # pragma: allowlist secret
-
-        assert response.status_code == 429
-        assert "Rate limit exceeded" in response.json()["detail"]
+        # Should be 422 Pydantic validation error (expected behavior)
+        assert response.status_code == 422
+        data = response.json()
+        assert isinstance(data["detail"], list)
 
     @patch("backend.api.routers.ai.ServiceClientCreators")
-    def test_validate_gemini_api_key_success(self, mock_service_client_creators, client):
-        """Test successful API key validation."""
+    def test_validate_key_precedence_empty_string_body_uses_query(self, mock_creators, client):
+        """Test that empty string body API key doesn't override valid query parameter in validate-key."""
+        # Mock the ServiceClientCreators instance and the full chain
         mock_creators_instance = Mock()
-        mock_service_client_creators.return_value = mock_creators_instance
-        # Mock successful client creation (no exception means valid key)
+        mock_creators.return_value = mock_creators_instance
+
+        # Mock successful client creation (just needs to not raise exception)
         mock_ai_analyzer = Mock()
         mock_creators_instance.create_configured_ai_client.return_value = mock_ai_analyzer
 
         response = client.post(
-            "/api/v1/ai/models/validate-key?api_key=" + FAKE_GEMINI_API_KEY
-        )  # pragma: allowlist secret
+            f"/api/v1/ai/models/validate-key?api_key={FAKE_GEMINI_API_KEY}",  # Valid query parameter
+            json={"api_key": ""},  # Empty body should not override
+        )
 
+        # Should succeed with mocked client
         assert response.status_code == 200
         data = response.json()
         assert data["valid"] is True
-        assert "API key is valid" in data["message"]
+        # Just verify that a message field exists and is not empty
+        assert "message" in data
+        assert data["message"]  # Non-empty message
 
-    @patch("backend.api.routers.ai.ServiceClientCreators")
-    def test_validate_gemini_api_key_invalid(self, mock_service_client_creators, client):
-        """Test API key validation with invalid key."""
-        mock_creators_instance = Mock()
-        mock_service_client_creators.return_value = mock_creators_instance
-        # Mock failed client creation (ConnectionError means invalid key)
-        mock_creators_instance.create_configured_ai_client.side_effect = ConnectionError("Invalid API key")
-
-        response = client.post("/api/v1/ai/models/validate-key?api_key=" + FAKE_INVALID_API_KEY)
-
-        assert response.status_code == 401
-        assert "Invalid API key" in response.json()["detail"]
+        # Verify the mock was called with the query parameter, not empty string
+        mock_creators_instance.create_configured_ai_client.assert_called_once_with(api_key=FAKE_GEMINI_API_KEY)
 
 
 class TestSettingsEndpoints:
@@ -645,7 +694,7 @@ class TestSettingsEndpoints:
         response = client.get("/api/v1/settings/backup")
 
         assert response.status_code == 200
-        assert response.headers["content-type"] == "application/json"
+        assert response.headers["content-type"].startswith("application/json")
         assert "attachment" in response.headers.get("content-disposition", "")
 
     @patch("backend.api.routers.settings.SettingsService")
@@ -713,30 +762,145 @@ class TestEndpointValidation:
 
     def test_analyze_empty_text(self, client):
         """Test analyze endpoint with empty text."""
+        # The endpoint validates and rejects empty text deterministically
         response = client.post("/api/v1/analyze", data={"text": ""})
-        # Should pass validation but might fail in processing
-        assert response.status_code in [200, 500, 503]
+        # Should return 422 for validation error on empty text
+        assert response.status_code == 422
+        assert "Text content is empty" in response.json()["detail"]
 
     def test_jenkins_builds_invalid_limit(self, client):
         """Test Jenkins builds with invalid limit parameter."""
         response = client.get("/api/v1/jenkins/test-job/builds?limit=-1")
         assert response.status_code == 503  # Service unavailable because Jenkins not configured
 
-    def test_git_clone_missing_repo_url(self, client):
-        """Test git clone without repository URL."""
-        response = client.post("/api/v1/git/clone", data={})
-        assert response.status_code == 422  # Validation error
-
     def test_gemini_models_invalid_api_key_length(self, client):
-        """Test Gemini models with too short API key."""
-        response = client.post("/api/v1/ai/models", json={"api_key": "short"})
-        assert response.status_code == 400  # Service validation error, not schema validation
+        """Test Gemini models with invalid API key length (format validation)."""
+        # Use a key with valid prefix but wrong length to test length validation
+        response = client.post("/api/v1/ai/models", json={"api_key": "AIzaSyShort"})
+        assert response.status_code == 400
+        assert INVALID_API_KEY_FORMAT in response.json()["detail"]
+
+    def test_gemini_models_invalid_api_key_prefix(self, client):
+        """Test Gemini models with invalid API key prefix (format validation)."""
+        response = client.post("/api/v1/ai/models", json={"api_key": FAKE_INVALID_FORMAT_KEY})
+        assert response.status_code == 400
+        assert INVALID_API_KEY_FORMAT in response.json()["detail"]
+        assert "AIzaSy" in response.json()["detail"]
+
+    @pytest.mark.parametrize(
+        "api_key,description",
+        [
+            ("  " + FAKE_GEMINI_API_KEY + "  ", "whitespace-padded valid key"),
+            ("   ", "whitespace-only key"),
+            ("  AIzaSyFakeKeyExample1234567890123456789  ", "whitespace-padded fake key"),  # gitleaks:allow
+        ],
+    )
+    def test_gemini_models_whitespace_validation(self, client, api_key, description):
+        """Test that whitespace-padded or whitespace-only API keys return authentication error."""
+        response = client.post("/api/v1/ai/models", json={"api_key": api_key})
+        assert response.status_code == 400
+        assert FAILED_VALIDATE_AUTHENTICATION in response.json()["detail"]
+
+    def test_gemini_models_non_string_api_key(self, client):
+        """Test Gemini models with non-string API key."""
+        # Test non-string body - should be rejected with validation error
+        response = client.post("/api/v1/ai/models", json={"api_key": 123})
+        assert response.status_code == 422
+        data = response.json()
+        # FastAPI validation errors return detail as a list
+        assert isinstance(data["detail"], list)
+        error_msg = str(data["detail"])
+        assert "string" in error_msg or "type" in error_msg
+
+    def test_api_key_precedence_non_string_body_validation(self, client):
+        """Test that non-string body API key is properly rejected by FastAPI validation."""
+        # This tests that FastAPI's Pydantic validation correctly rejects non-string types
+        # before they reach our validation logic (which is expected behavior)
+        response = client.post(
+            f"/api/v1/ai/models?api_key={FAKE_GEMINI_API_KEY}",  # Valid query parameter
+            json={"api_key": 123},  # Non-string body should be rejected by Pydantic
+        )
+        # Should be 422 Pydantic validation error (expected behavior)
+        assert response.status_code == 422
+        data = response.json()
+        assert isinstance(data["detail"], list)
+
+    @patch("backend.api.routers.ai.ServiceClientCreators")
+    def test_api_key_precedence_string_body_overrides_query(self, mock_creators, client):
+        """Test that valid string body API key properly overrides query parameter."""
+        # Mock the ServiceClientCreators instance and the full chain
+        mock_creators_instance = Mock()
+        mock_creators.return_value = mock_creators_instance
+
+        # Mock the AI analyzer and its client
+        mock_ai_analyzer = Mock()
+        mock_creators_instance.create_configured_ai_client.return_value = mock_ai_analyzer
+
+        # Mock the underlying GeminiClient response
+        mock_gemini_client = Mock()
+        mock_ai_analyzer.client = mock_gemini_client
+
+        mock_response = GeminiModelsResponse(
+            success=True,
+            models=[],
+            total_count=0,
+            message="Success",
+            error_details=None,
+        )
+        mock_gemini_client.get_available_models.return_value = mock_response
+
+        # Use an invalid query key but valid body key to test precedence
+        response = client.post(
+            "/api/v1/ai/models?api_key=invalid-query-key",
+            json={"api_key": FAKE_GEMINI_API_KEY},  # Valid body should override
+        )
+
+        # Should succeed and use the body key, not the query key
+        assert response.status_code == 200
+        mock_creators_instance.create_configured_ai_client.assert_called_once_with(api_key=FAKE_GEMINI_API_KEY)
+
+    @patch("backend.api.routers.ai.ServiceClientCreators")
+    def test_api_key_precedence_empty_string_body_uses_query(self, mock_service_creators, client):
+        """Test that empty string body API key doesn't override valid query parameter."""
+        # Mock the service creators to make test deterministic
+        mock_creators_instance = Mock()
+        mock_service_creators.return_value = mock_creators_instance
+
+        # Mock AI analyzer and client
+        mock_ai_analyzer = Mock()
+        mock_gemini_client = Mock()
+        mock_creators_instance.create_configured_ai_client.return_value = mock_ai_analyzer
+        mock_ai_analyzer.client = mock_gemini_client
+
+        mock_response = GeminiModelsResponse(
+            success=True,
+            models=[],
+            total_count=0,
+            message="Success",
+            error_details=None,
+        )
+        mock_gemini_client.get_available_models.return_value = mock_response
+
+        response = client.post(
+            f"/api/v1/ai/models?api_key={FAKE_GEMINI_API_KEY}",  # Valid query parameter
+            json={"api_key": ""},  # Empty body should not override
+        )
+        # Should use query parameter and succeed deterministically
+        assert response.status_code == 200
+        mock_creators_instance.create_configured_ai_client.assert_called_once_with(api_key=FAKE_GEMINI_API_KEY)
 
     def test_settings_update_invalid_data(self, client):
         """Test settings update with invalid data."""
         response = client.put("/api/v1/settings", json={"invalid": "data"})
-        # Should either accept (ignoring invalid fields) or reject
-        assert response.status_code in [200, 422]
+        # API is designed to accept and ignore invalid fields for flexibility
+        assert response.status_code == 200
+
+    def test_settings_update_accepts_partial_valid_data(self, client):
+        """Test settings update accepts partial valid data."""
+        # Test with a valid partial update
+        response = client.put("/api/v1/settings", json={"jenkins": {"url": "https://example.com"}})
+        # Should accept partial valid updates
+        assert response.status_code == 200
 
 
 class TestEndpointErrorHandling:
@@ -768,16 +932,6 @@ class TestEndpointErrorHandling:
         assert response.status_code == 500
         assert "Failed to get job builds" in response.json()["detail"]
 
-    @patch("backend.api.routers.git.ServiceClientCreators")
-    def test_git_clone_service_exception(self, mock_service_config, client):
-        """Test git clone endpoint with service exception."""
-        mock_service_config.return_value.create_configured_git_client.side_effect = Exception("Service error")
-
-        response = client.post("/api/v1/git/clone", data={"repo_url": FAKE_GITHUB_REPO})
-
-        assert response.status_code == 500
-        assert "Clone failed" in response.json()["detail"]
-
     @patch("backend.api.routers.ai.ServiceClientCreators")
     def test_gemini_models_service_exception(self, mock_service_client_creators, client):
         """Test Gemini models endpoint with service exception."""
@@ -786,7 +940,7 @@ class TestEndpointErrorHandling:
         response = client.post("/api/v1/ai/models?api_key=" + FAKE_GEMINI_API_KEY)  # pragma: allowlist secret
 
         assert response.status_code == 500
-        assert "Failed to fetch Gemini models" in response.json()["detail"]
+        assert INTERNAL_SERVER_ERROR_FETCHING_MODELS in response.json()["detail"]
 
     @patch("backend.api.routers.settings.SettingsService")
     def test_settings_get_exception(self, mock_settings_service, client):

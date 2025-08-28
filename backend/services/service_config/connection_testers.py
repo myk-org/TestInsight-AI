@@ -41,6 +41,10 @@ class ServiceConnectionTesters(BaseServiceConfig):
                 url=url, username=username, password=password, verify_ssl=verify_ssl
             )
 
+            # If the client reports not connected immediately, surface clear error
+            if not getattr(client, "is_connected", lambda: False)():
+                raise ConnectionError("Jenkins connection failed: not connected")
+
             # Prefer explicit calls to surface useful error details rather than a boolean check
             try:
                 version = client.get_version()

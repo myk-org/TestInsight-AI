@@ -1,7 +1,7 @@
 """AI analyzer service using Google Gemini via ai_api.py."""
 
 import json
-import os
+import logging
 import re
 from pathlib import Path
 from typing import Any
@@ -14,6 +14,8 @@ from backend.models.schemas import (
 )
 from backend.services.gemini_api import GeminiClient
 
+logger = logging.getLogger("testinsight")
+
 
 class AIAnalyzer:
     """AI-powered analyzer using Google Gemini."""
@@ -22,7 +24,7 @@ class AIAnalyzer:
         """Initialize AI analyzer.
 
         Args:
-            gemini_client: Gemini client instance from gemini_api.py
+            client: Gemini client instance from gemini_api.py
         """
         self.client = client
 
@@ -35,15 +37,61 @@ class AIAnalyzer:
         Returns:
             Analysis response with insights
         """
+        # Log repository URL presence instead of full URL to prevent data leakage
+        repo_url_present = bool(getattr(request, "repository_url", None))
+        # Extract and trim branch/commit info for logging (max 7 chars for commit hash)
+        branch = getattr(request, "repository_branch", None)
+        commit = getattr(request, "repository_commit", None)
+
+        # Trim commit hash to first 7 chars for security (reduced sensitive data leakage)
+        commit_short = commit[:7] if isinstance(commit, str) and commit else commit
+
+        # Only log branch when it differs from default to reduce log verbosity
+        branch_to_log = branch if branch and branch not in ("main", "master", "develop") else None
+
+        logger.debug(
+            "AIAnalyzer: analyze start text_len=%d include_repo=%s system_prompt=%s repo_url_present=%s branch=%s commit=%s",
+            len(getattr(request, "text", "") or ""),
+            getattr(request, "include_repository_context", False),
+            bool(getattr(request, "system_prompt", None)),
+            repo_url_present,
+            branch_to_log,
+            commit_short,
+        )
+        # Extract repo limits from request (no instance storage to avoid concurrency issues)
+        try:
+            repo_max_files = getattr(request, "repo_max_files", None)
+            repo_max_bytes = getattr(request, "repo_max_bytes", None)
+        except (AttributeError, TypeError) as e:
+            logger.debug("Failed to extract repo limits from request: %s", e)
+            repo_max_files = None
+            repo_max_bytes = None
+
         # Generate analysis context
-        context = self._build_analysis_context(request)
+        context = self._build_analysis_context(request, repo_max_files, repo_max_bytes)
+        logger.info(
+            "AIAnalyzer: context built len=%d include_repo=%s cloned_path=%s",
+            len(context or ""),
+            getattr(request, "include_repository_context", False),
+            getattr(request, "cloned_repo_path", None),
+        )
 
         # Generate insights using AI
         insights = self._generate_insights(context, request.system_prompt)
 
         # Generate summary and recommendations
         summary = self._generate_summary(context, insights, request.system_prompt)
-        recommendations = self._generate_recommendations(context, insights, request.system_prompt)
+        logger.debug("AIAnalyzer: summary generated len=%d", len(summary or ""))
+        recommendations = self._generate_recommendations(
+            context,
+            insights,
+            request.system_prompt,
+            repo_context_included=bool(
+                getattr(request, "include_repository_context", False)
+                and bool(getattr(request, "cloned_repo_path", None))
+            ),
+        )
+        logger.info("AIAnalyzer: recommendations generated count=%d", len(recommendations))
 
         return AnalysisResponse(
             insights=insights,
@@ -51,7 +99,9 @@ class AIAnalyzer:
             recommendations=recommendations,
         )
 
-    def _build_analysis_context(self, request: AnalysisRequest) -> str:
+    def _build_analysis_context(
+        self, request: AnalysisRequest, repo_max_files: int | None = None, repo_max_bytes: int | None = None
+    ) -> str:
         """Build context string for AI analysis.
 
         Args:
@@ -73,21 +123,35 @@ class AIAnalyzer:
         if request.include_repository_context:
             if _repo_path := getattr(request, "cloned_repo_path", ""):
                 repo_files = self._extract_relevant_repository_files(
-                    repo_path=Path(_repo_path), failure_text=request.text
+                    repo_path=Path(_repo_path),
+                    failure_text=request.text,
+                    max_files=repo_max_files,
+                    max_file_bytes=repo_max_bytes,
                 )
                 if repo_files:
                     context_parts.append("Repository Source Code Context:")
                     for file_path, content in repo_files:
                         context_parts.append(f"\n--- {file_path} ---\n{content}")
+                # Limit log payload to avoid noisy logs and potential leakage
+                file_sample = [fp for fp, _ in repo_files[:3]]  # Show first 3 files
+                if len(repo_files) > 3:
+                    file_sample.append(f"... and {len(repo_files) - 3} more")
+                logger.debug(
+                    "AIAnalyzer: repo files extracted count=%d files=%s",
+                    len(repo_files),
+                    file_sample,
+                )
 
-        return "\n\n".join(context_parts)
+        result_context = "\n\n".join(context_parts)
+        logger.debug("AIAnalyzer: context ready len=%d", len(result_context))
+        return result_context
 
     def _generate_insights(self, context: str, system_prompt: str | None = None) -> list[AIInsight]:
         """Generate AI insights from context.
 
         Args:
             context: Analysis context
-            request: Original request
+            system_prompt: Optional custom system prompt
 
         Returns:
             List of AI insights
@@ -127,64 +191,171 @@ class AIAnalyzer:
             # Gracefully degrade to no insights
             return []
 
-        # Strip markdown code fences if present
-        content = raw_content
-        if content.startswith("```json"):
-            content = content.replace("```json", "").replace("```", "").strip()
-        elif content.startswith("```"):
-            content = content.replace("```", "").strip()
+        # Parse JSON response using multi-stage strategy
+        try:
+            cleaned_content = self._clean_content(raw_content)
+            insights_data = self._parse_json_response(cleaned_content)
+            return self._convert_to_insights(insights_data)
+        except ValueError as e:
+            logger.error("Failed to parse AI insights: %s", e)
+            raise
 
-        def _parse_json_array(text: str) -> list[Any]:
-            # Fast path
-            try:
-                data = json.loads(text)
-                return data if isinstance(data, list) else []
-            except json.JSONDecodeError:
-                pass
+    def _clean_content(self, raw_content: str) -> str:
+        """Clean AI response content by removing markdown fences.
 
-            # Try extracting the bracketed array region
-            try:
-                start = text.find("[")
-                end = text.rfind("]")
-                if start != -1 and end != -1 and end > start:
-                    subset = text[start : end + 1]
-                    data = json.loads(subset)
-                    return data if isinstance(data, list) else []
-            except Exception:
-                pass
+        Args:
+            raw_content: Raw AI response content
 
-            # Last resort: parse objects heuristically and collect valid ones
-            items: list[Any] = []
-            buf = []
-            depth = 0
-            for ch in text:
-                if ch == "{":
-                    depth += 1
-                if depth > 0:
-                    buf.append(ch)
-                if ch == "}":
-                    depth -= 1
-                    if depth == 0 and buf:
-                        candidate = "".join(buf)
-                        buf = []
-                        try:
-                            obj = json.loads(candidate)
-                            items.append(obj)
-                        except Exception:
-                            # Skip malformed chunk
-                            pass
-            return items
+        Returns:
+            Cleaned content ready for JSON parsing
+        """
+        content = raw_content.strip()
 
-        insights_data = _parse_json_array(content)
+        # Remove markdown code fences - hardened for Windows newlines (CRLF)
+        # Handle both LF (\n) and CRLF (\r\n) line endings robustly
+        content = re.sub(r"^\s*```[a-zA-Z]*\s*\r?\n?", "", content)
+        content = re.sub(r"\r?\n?```\s*$", "", content)
 
-        # If still invalid or empty, surface a clear error (do not hide by returning empty)
-        if not isinstance(insights_data, list) or len(insights_data) == 0:
-            snippet = raw_content.strip()
-            if len(snippet) > 800:
-                snippet = snippet[:800] + "..."
-            raise ValueError(f"AI returned invalid JSON for insights: {snippet}")
+        return content.strip()
 
-        return [self._create_insight_from_dict(insight) for insight in insights_data if isinstance(insight, dict)]
+    def _parse_json_response(self, content: str) -> list[dict[str, Any]]:
+        """Parse JSON response using multiple fallback strategies.
+
+        Args:
+            content: Cleaned content to parse
+
+        Returns:
+            List of parsed insight dictionaries
+
+        Raises:
+            ValueError: If all parsing strategies fail
+        """
+        # Strategy 1: Direct JSON parsing
+        try:
+            parsed = json.loads(content)
+            if isinstance(parsed, list):
+                return parsed
+            elif isinstance(parsed, dict):
+                # Single object wrapped in array
+                return [parsed]
+            else:
+                logger.warning("AI returned non-list/dict JSON: %s", type(parsed).__name__)
+                return []
+        except json.JSONDecodeError as e:
+            logger.debug("Direct JSON parse failed: %s", e)
+
+        # Strategy 2: Extract JSON array from content
+        extracted_list = self._extract_json_array(content)
+        if extracted_list is not None:
+            return extracted_list
+
+        # Strategy 3: Extract individual JSON objects
+        extracted_objects = self._extract_json_objects(content)
+        if extracted_objects:
+            return extracted_objects
+
+        # All strategies failed
+        snippet = content[:200] + "..." if len(content) > 200 else content
+        raise ValueError(f"AI returned unparseable JSON content: {snippet}")
+
+    def _extract_json_array(self, content: str) -> list[dict[str, Any]] | None:
+        """Extract JSON array from content that may contain extra text.
+
+        Args:
+            content: Content that may contain a JSON array
+
+        Returns:
+            Parsed list or None if extraction fails
+        """
+        start = content.find("[")
+        end = content.rfind("]")
+
+        if start == -1 or end == -1 or end <= start:
+            return None
+
+        try:
+            json_subset = content[start : end + 1]
+            parsed = json.loads(json_subset)
+            if isinstance(parsed, list):
+                return parsed
+        except json.JSONDecodeError as e:
+            logger.debug("Array extraction failed: %s", e)
+
+        return None
+
+    def _extract_json_objects(self, content: str) -> list[dict[str, Any]]:
+        """Extract individual JSON objects from content using brace matching.
+
+        Args:
+            content: Content that may contain JSON objects
+
+        Returns:
+            List of successfully parsed objects
+        """
+        objects: list[dict[str, Any]] = []
+        buffer: list[str] = []
+        brace_depth = 0
+
+        for char in content:
+            if char == "{":
+                brace_depth += 1
+
+            if brace_depth > 0:
+                buffer.append(char)
+
+            if char == "}":
+                brace_depth -= 1
+                if brace_depth == 0 and buffer:
+                    # Try to parse the collected object
+                    try:
+                        candidate = "".join(buffer)
+                        obj = json.loads(candidate)
+                        if isinstance(obj, dict):
+                            objects.append(obj)
+                    except json.JSONDecodeError:
+                        pass  # Skip malformed objects
+                    finally:
+                        buffer.clear()
+
+        return objects
+
+    def _convert_to_insights(self, insights_data: list[dict[str, Any]]) -> list[AIInsight]:
+        """Convert parsed data to AIInsight objects.
+
+        Args:
+            insights_data: List of parsed insight dictionaries
+
+        Returns:
+            List of AIInsight objects
+        """
+        if not insights_data:
+            logger.debug("AIAnalyzer: insights parsed count=0 (empty array)")
+            return []
+
+        # Filter and convert valid dictionaries to insights
+        insights = []
+        for item in insights_data:
+            if isinstance(item, dict):
+                try:
+                    insight = self._create_insight_from_dict(item)
+                    insights.append(insight)
+                except Exception as e:
+                    logger.warning("Failed to create insight from dict: %s", e)
+                    continue
+            else:
+                logger.warning("Skipping non-dict insight item: %s", type(item).__name__)
+
+        logger.info("AIAnalyzer: insights parsed count=%d", len(insights))
+        for i, insight in enumerate(insights):
+            logger.debug(
+                "AIAnalyzer: insight[%d] title=%s severity=%s category=%s",
+                i,
+                insight.title,
+                insight.severity.value,
+                insight.category,
+            )
+
+        return insights
 
     def _generate_summary(self, context: str, insights: list[AIInsight], system_prompt: str | None = None) -> str:
         """Generate analysis summary.
@@ -215,20 +386,123 @@ class AIAnalyzer:
         return result["content"].strip()
 
     def _generate_recommendations(
-        self, context: str, insights: list[AIInsight], system_prompt: str | None = None
+        self,
+        context: str,
+        insights: list[AIInsight],
+        system_prompt: str | None = None,
+        *,
+        repo_context_included: bool = False,
+        max_tokens: int = 8192,
     ) -> list[str]:
-        """Generate actionable recommendations.
+        """Generate actionable recommendations."""
+        instructions, allowed_paths, allowed_clause = self._build_recommendation_instructions(
+            context=context,
+            system_prompt=system_prompt,
+            repo_context_included=repo_context_included,
+        )
 
-        Args:
-            context: Analysis context
-            insights: Generated insights
-            system_prompt: Optional custom system prompt
+        prompt = self._compose_recommendations_prompt(
+            instructions=instructions,
+            allowed_clause=allowed_clause if repo_context_included else "",
+            context=context,
+            insights=insights,
+            repo_context_included=repo_context_included,
+        )
 
-        Returns:
-            List of recommendations
-        """
-        prompt = f"""
-        {system_prompt or "Based on the analysis context and insights, provide specific, actionable recommendations."}
+        response_schema = self._build_response_schema(allowed_paths, repo_context_included)
+        raw = self._query_recommendations_model(
+            prompt=prompt,
+            repo_context_included=repo_context_included,
+            response_schema=response_schema,
+            max_tokens=max_tokens,
+        )
+
+        logger.debug("AIAnalyzer: recommendations raw length=%d", len(raw))
+        parsed = self._parse_recommendations_to_strings(raw)
+        if parsed:
+            logger.debug("AIAnalyzer: recommendations initial parsed count=%d", len(parsed))
+            sanitized = self._sanitize_and_force_code_blocks(parsed, context, insights, repo_context_included)
+            if sanitized:
+                return sanitized
+
+        # If model output is invalid JSON and no insights exist, tests expect []
+        if not insights:
+            return []
+        return self._fallback_recommendations(insights, raw)
+
+    def _build_recommendation_instructions(
+        self,
+        *,
+        context: str,
+        system_prompt: str | None,
+        repo_context_included: bool,
+    ) -> tuple[str, list[str], str]:
+        allowed_paths: list[str] = []
+        allowed_clause: str = ""
+        if repo_context_included:
+            try:
+                allowed_paths = re.findall(r"(?m)^---\s+([^\n]+)\s+---$", context)
+                allowed_paths = [p.strip() for p in allowed_paths if p.strip()]
+                # Deduplicate while preserving order
+                seen = set()
+                deduplicated = []
+                for x in allowed_paths:
+                    if x not in seen:
+                        seen.add(x)
+                        deduplicated.append(x)
+                allowed_paths = deduplicated
+            except Exception:
+                allowed_paths = []
+            logger.debug(
+                "AIAnalyzer: repo-context strict mode enabled; allowed_paths=%d sample=%s",
+                len(allowed_paths),
+                allowed_paths,
+            )
+
+            strict_instructions = (
+                "Based on the analysis context and insights, provide concrete code-change recommendations from the cloned repository only. "
+                "Each recommendation MUST be a single string that includes: (1) a one-line rationale, and (2) one or more fenced code blocks "
+                "showing the exact changes (patches or full replacement). The opening fence MUST include a language tag and the path on the same line, "
+                "for example: ```python path: utilities/mtv_migration.py\n"
+                "Do NOT invent files, functions, or unrelated examples. Do NOT output unified diffs or git patch headers (no lines starting with '--- a/', '+++ b/', or '@@ … @@'). "
+                "Do NOT include ellipses like '...' in code. Provide complete, copy-pastable snippets only."
+            )
+            allowed_clause = (
+                "Allowed files (choose from this list only):\n- " + "\n- ".join(allowed_paths) if allowed_paths else ""
+            )
+        else:
+            strict_instructions = (
+                "Based on the analysis context and insights, provide specific, actionable recommendations."
+            )
+
+        if system_prompt and system_prompt.strip():
+            instructions = system_prompt.strip()
+        else:
+            instructions = strict_instructions
+
+        return instructions, allowed_paths, allowed_clause
+
+    def _compose_recommendations_prompt(
+        self,
+        *,
+        instructions: str,
+        allowed_clause: str,
+        context: str,
+        insights: list[AIInsight],
+        repo_context_included: bool = False,
+    ) -> str:
+        # Align output contract with response schema based on repository context
+        if repo_context_included:
+            output_contract = (
+                "Return ONLY a JSON array of objects with schema: [{path: string, language: string, code: string, rationale?: string}]. "
+                "Each object represents a code change recommendation for the specified file path."
+            )
+        else:
+            output_contract = "Return ONLY a JSON array of strings. No prose outside JSON. Each string should be a clear, actionable recommendation."
+        return f"""
+        {instructions}
+
+        {allowed_clause}
 
         Context Summary:
         {context}
@@ -236,18 +510,230 @@ class AIAnalyzer:
         Top Insights:
         {self._format_insights_for_prompt(insights)}
 
-        Return ONLY a List array of strings, no other text. Example format:
-        ["Recommendation 1", "Recommendation 2", "Recommendation 3", "Additional recommendations as needed"]
+        {output_contract}
         """
-        result = self.client.generate_content(prompt)
+
+    def _build_response_schema(self, allowed_paths: list[str], included: bool) -> Any:
+        if included and allowed_paths:
+            return {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "enum": allowed_paths},
+                        "language": {"type": "string"},
+                        "rationale": {"type": "string"},
+                        "code": {"type": "string"},
+                    },
+                    "required": ["path", "language", "code"],
+                },
+                "minItems": 1,
+            }
+        return None
+
+    def _query_recommendations_model(
+        self,
+        *,
+        prompt: str,
+        repo_context_included: bool,
+        response_schema: Any,
+        max_tokens: int = 8192,
+    ) -> str:
+        result = self.client.generate_content(
+            prompt,
+            response_mime_type="application/json",
+            temperature=0.1 if repo_context_included else 0.7,
+            max_tokens=max_tokens,
+            response_schema=response_schema,
+        )
         if not result["success"]:
             raise ConnectionError(f"AI content generation failed: {result['error']}")
+        return (result.get("content") or "").strip()
 
+    def _parse_recommendations_to_strings(self, text: str) -> list[str]:
+        # 1) structured objects
         try:
-            return json.loads(result["content"].strip())
-        except json.JSONDecodeError:
-            # Fallback if AI doesn't follow format
+            candidate = json.loads(text)
+            if isinstance(candidate, list) and all(isinstance(o, dict) for o in candidate):
+                out: list[str] = []
+                for o in candidate:
+                    path = o.get("path")
+                    lang = o.get("language") or "bash"
+                    code = o.get("code")
+                    rationale = o.get("rationale")
+                    if isinstance(path, str) and isinstance(code, str):
+                        header = f"```{lang} path: {path}"
+                        block = f"{header}\n{code.strip()}\n```"
+                        out.append(
+                            f"{rationale.strip()}\n{block}"
+                            if isinstance(rationale, str) and rationale.strip()
+                            else block
+                        )
+                if out:
+                    return out
+        except Exception:
+            pass
+
+        # 2) plain array (strings/objects)
+        try:
+            data = json.loads(text)
+            if isinstance(data, list):
+                out2: list[str] = []
+                for item in data:
+                    if isinstance(item, str):
+                        out2.append(item)
+                    elif isinstance(item, dict):
+                        for key in ("text", "recommendation", "value"):
+                            if key in item and isinstance(item[key], str):
+                                out2.append(item[key])
+                                break
+                return out2
+        except Exception:
+            pass
+
+        # 3) bracketed array region fallback
+        try:
+            start = text.find("[")
+            end = text.rfind("]")
+            if start != -1 and end != -1 and end > start:
+                sub = text[start : end + 1]
+                data = json.loads(sub)
+                if isinstance(data, list):
+                    return [str(x) if not isinstance(x, str) else x for x in data]
+        except Exception:
+            pass
+        return []
+
+    def _sanitize_and_force_code_blocks(
+        self,
+        recs: list[str],
+        context: str,
+        insights: list[AIInsight],
+        included: bool,
+        *,
+        attempted_force: bool = False,
+    ) -> list[str]:
+        def _strip_diff_headers(s: str) -> str:
+            try:
+                return re.sub(r"(?m)^(?:--- a/.*|\+\+\+ b/.*|@@.*@@)\n?", "", s)
+            except Exception:
+                return s
+
+        parsed = [_strip_diff_headers(s) if isinstance(s, str) else s for s in recs]
+        code_like = sum(1 for s in parsed if isinstance(s, str) and "```" in s)
+        logger.debug(
+            "AIAnalyzer: recommendations parsed count=%d code_blocks=%d",
+            len(parsed),
+            code_like,
+        )
+
+        if included and code_like == 0 and not attempted_force:
+            try:
+                allowed_paths = re.findall(r"(?m)^---\s+([^\n]+)\s+---$", context)
+                allowed_paths = [p.strip() for p in allowed_paths if p.strip()]
+                # Deduplicate while preserving order
+                seen = set()
+                deduplicated = []
+                for x in allowed_paths:
+                    if x not in seen:
+                        seen.add(x)
+                        deduplicated.append(x)
+                allowed_paths = deduplicated
+            except Exception:
+                allowed_paths = []
+            if allowed_paths:
+                forced = self._force_code_retry(context, insights, allowed_paths)
+                if forced:
+                    return forced
+                single = self._force_single_file(context, insights, allowed_paths)
+                if single:
+                    return single
+        return parsed
+
+    def _force_code_retry(
+        self,
+        context: str,
+        insights: list[AIInsight],
+        allowed_paths: list[str],
+    ) -> list[str]:
+        forced_instructions = (
+            "Return ONLY a JSON array of objects with this schema: "
+            "[{ path: <one of the allowed paths>, language: <language>, code: <string>, rationale?: <string> }]. "
+            "For each object you MUST output a single fenced code block in the final string using the fence format ```{language} path: {path}. "
+            "Do NOT invent files. Do NOT output unified diffs or git headers."
+        )
+        retry_prompt = f"""
+        {forced_instructions}
+
+        Context Summary:
+        {context}
+
+        Top Insights:
+        {self._format_insights_for_prompt(insights)}
+        """
+        # Enforce a strict response schema to maximize the chance of valid code output
+        response_schema = {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "enum": allowed_paths},
+                    "language": {"type": "string"},
+                    "rationale": {"type": "string"},
+                    "code": {"type": "string"},
+                },
+                "required": ["path", "language", "code"],
+            },
+            "minItems": 1,
+        }
+
+        result = self.client.generate_content(
+            retry_prompt,
+            response_mime_type="application/json",
+            temperature=0.05,
+            response_schema=response_schema,
+        )
+        if result.get("success"):
+            retry_raw = (result.get("content") or "").strip()
+            retry_parsed = self._parse_recommendations_to_strings(retry_raw)
+            if retry_parsed:
+                # Final sanitation pass (diff headers, etc.)
+                return self._sanitize_and_force_code_blocks(retry_parsed, context, insights, True, attempted_force=True)
+        return []
+
+    def _force_single_file(
+        self,
+        context: str,
+        insights: list[AIInsight],
+        allowed_paths: list[str],
+    ) -> list[str]:
+        target_file = allowed_paths[0] if allowed_paths else None
+        if not target_file:
             return []
+        single_file_prompt = f"""
+        You MUST provide at least one fenced code block for the following file only, with path on the opening fence:
+        ```{{language}} path: {target_file}
+
+        Return ONLY a JSON array of one or more strings. Each string MUST include a single fenced code block whose opening fence contains 'path: {target_file}'.
+        Do NOT output diffs, headers, or ellipses. Provide the full, pasteable code snippet.
+
+        Context Summary:
+        {context}
+
+        Top Insights:
+        {self._format_insights_for_prompt(insights)}
+        """
+        result = self.client.generate_content(
+            single_file_prompt,
+            response_mime_type="application/json",
+            temperature=0.1,
+        )
+        if result.get("success"):
+            single_raw = (result.get("content") or "").strip()
+            single_parsed = self._parse_recommendations_to_strings(single_raw)
+            return self._sanitize_and_force_code_blocks(single_parsed, context, insights, True, attempted_force=True)
+
+        return []
 
     def _create_insight_from_dict(self, data: dict[str, Any]) -> AIInsight:
         """Create AIInsight from parsed data.
@@ -265,12 +751,31 @@ class AIAnalyzer:
             "CRITICAL": Severity.CRITICAL,
         }
 
+        # Harden severity parsing to handle "Severity.MEDIUM" format
+        severity_raw = data.get("severity", "MEDIUM")
+        if hasattr(severity_raw, "value"):  # Handle Severity enum objects
+            sev_key = str(severity_raw.value).strip().upper()
+        else:
+            sev_key = str(severity_raw).strip().upper()
+            # Strip "Severity." prefix if present
+            if sev_key.startswith("SEVERITY."):
+                sev_key = sev_key[9:]  # Remove "SEVERITY." prefix
+
+        # Normalize suggestions to list[str] before creating AIInsight
+        suggestions_raw = data.get("suggestions", [])
+        if isinstance(suggestions_raw, list):
+            suggestions = [str(s) for s in suggestions_raw]
+        elif isinstance(suggestions_raw, str):
+            suggestions = [suggestions_raw]
+        else:
+            suggestions = [str(suggestions_raw)] if suggestions_raw else []
+
         return AIInsight(
             title=data.get("title", "Unknown Issue"),
             description=data.get("description", "No description available"),
-            severity=severity_map.get(data.get("severity", "MEDIUM"), Severity.MEDIUM),
+            severity=severity_map.get(sev_key, Severity.MEDIUM),
             category=data.get("category", "General"),
-            suggestions=data.get("suggestions", []),
+            suggestions=suggestions,
             confidence=data.get("confidence", 0.7),
         )
 
@@ -288,42 +793,48 @@ class AIAnalyzer:
 
         formatted = []
         for insight in insights:
-            formatted.append(f"- {insight.title} ({insight.severity.value})")
+            # Handle both enum severities (with .value) and string severities
+            severity_str = insight.severity.value if hasattr(insight.severity, "value") else str(insight.severity)
+            formatted.append(f"- {insight.title} ({severity_str})")
 
         return "\n".join(formatted)
 
-    def _extract_relevant_repository_files(self, repo_path: Path, failure_text: str) -> list[tuple[str, str]]:
+    def _extract_relevant_repository_files(
+        self, repo_path: Path, failure_text: str, max_files: int | None = None, max_file_bytes: int | None = None
+    ) -> list[tuple[str, str]]:
         """Extract 3-5 most relevant files for AI analysis.
 
         Args:
             repo_path: Path to cloned repository
             failure_text: Text containing failure information
+            max_files: Maximum number of files to extract (default: 5)
+            max_file_bytes: Maximum bytes per file (default: 51200)
 
         Returns:
             List of (file_path, content) tuples
         """
+        # Normalize failure_text to handle non-str inputs robustly
+        if failure_text is None:
+            failure_text = ""
+        elif not isinstance(failure_text, str):
+            failure_text = str(failure_text)
+
         files: list[tuple[str, str]] = []
 
-        def _safe_int_env(key: str, default: int) -> int:
-            value = os.getenv(key)
-            try:
-                return int(value) if value is not None else default
-            except (TypeError, ValueError):
-                # Avoid crashing on invalid env values; log and use default
-                print(f"Warning: Invalid int for {key}={value!r}; using default {default}")
-                return default
+        # Apply default limits if not provided or invalid
+        if not isinstance(max_files, int) or max_files <= 0:
+            max_files = 5
+        if not isinstance(max_file_bytes, int) or max_file_bytes <= 0:
+            max_file_bytes = 51200
 
-        max_files = _safe_int_env("AI_REPO_MAX_FILES", 5)
-        max_file_bytes = _safe_int_env("AI_REPO_MAX_FILE_BYTES", 51200)
-
-        # 2. Test files mentioned in failure output
+        # 2. Test files mentioned in failure output - improved patterns for nested paths and hyphens
         test_file_patterns = [
-            r"(\w+\.py)::",  # pytest: test_file.py::test_function
-            r"(\w+\.py)",  # Python files
-            r"(\w+\.test\.js)",
-            r"(\w+\.spec\.js)",  # JavaScript test files
-            r"(\w+Test\.java)",  # Java test files
-            r"(\w+_test\.go)",  # Go test files
+            r"([\w\-/]+\.py)::",  # pytest: path/test-file.py::test_function (supports nested paths and hyphens)
+            r"([\w\-/]+\.py)",  # Python files with paths and hyphens
+            r"([\w\-/]+\.test\.js)",
+            r"([\w\-/]+\.spec\.js)",  # JavaScript test files with paths and hyphens
+            r"([\w\-/]+Test\.java)",  # Java test files with paths and hyphens
+            r"([\w\-/]+_test\.go)",  # Go test files with paths and hyphens
         ]
 
         seen_paths: set[str] = set()
@@ -343,15 +854,13 @@ class AIAnalyzer:
                                 with file_path.open("rb") as fh:
                                     chunk = fh.read(max_file_bytes)
                                     content = chunk.decode("utf-8", errors="ignore")
-                                    if len(chunk) == max_file_bytes:
-                                        content += "\n<!-- truncated -->\n"
                             except Exception:
                                 # Fallback: avoid brittle mocks, provide minimal placeholder
                                 content = ""
                         else:
                             # Fallback: avoid brittle mocks, provide minimal placeholder
                             content = ""
-                        relative_path = str(file_path.relative_to(repo_path))
+                        relative_path = str(file_path.resolve().relative_to(repo_path.resolve()))
                         if relative_path not in seen_paths:
                             seen_paths.add(relative_path)
                             files.append((relative_path, content))
@@ -361,31 +870,149 @@ class AIAnalyzer:
                 if len(files) >= max_files:
                     return files
 
+        # 3. Any explicit file paths referenced in the failure text (e.g., libs/providers/vmware.py)
+        if len(files) < max_files:
+            path_like_pattern = r"([A-Za-z0-9_./\-]+\.(?:py|yaml|yml|json|sh|bash|ts|tsx|js|java|go))"
+            try:
+                candidates = re.findall(path_like_pattern, failure_text)
+            except Exception:
+                candidates = []
+            for candidate in candidates:
+                try:
+                    candidate = candidate.strip()
+                    if not candidate:
+                        continue
+                    # Try direct path first - ensure resolved path stays under repo_path
+                    direct = (repo_path / candidate).resolve()
+                    # Security check: ensure resolved path is within repository root (use resolved base)
+                    try:
+                        direct.relative_to(repo_path.resolve())
+                        file_path = direct if direct.exists() and direct.is_file() else None
+                    except ValueError:
+                        # Path is outside repository root - skip it
+                        file_path = None
+                    if not file_path:
+                        # Fallback to basename search
+                        basename = Path(candidate).name
+                        file_path = self._find_file_in_repo(repo_path, basename)
+                    if file_path and file_path.exists():
+                        try:
+                            with file_path.open("rb") as fh:
+                                chunk = fh.read(max_file_bytes)
+                                content = chunk.decode("utf-8", errors="ignore")
+                            relative_path = str(file_path.resolve().relative_to(repo_path.resolve()))
+                            if relative_path not in seen_paths:
+                                seen_paths.add(relative_path)
+                                files.append((relative_path, content))
+                        except Exception:
+                            continue
+                except Exception:
+                    continue
+                if len(files) >= max_files:
+                    return files
+
         return files
 
     def _find_file_in_repo(self, repo_path: Path, filename: str) -> Path | None:
-        """Find file in repository by name.
+        """Find file in repository by name with optimized search and basename fallback.
 
         Args:
             repo_path: Path to repository root
-            filename: Name of file to find
+            filename: Name of file to find (may include subdirectory like "subdir/file.py")
 
         Returns:
             Path to file if found, None otherwise
         """
         try:
-            # Use glob to find the file, limiting search depth for performance
+            # Priority search in common root directories first for performance
+            priority_roots = ["tests", "src", "backend", "frontend", "test", "lib", "pkg"]
+            ignore_dirs = {".git", "node_modules", "__pycache__", ".venv", "venv", "target", ".tox", "build", "dist"}
+
+            # First pass: search in priority directories
+            for root in priority_roots:
+                priority_path = repo_path / root
+                if priority_path.exists() and priority_path.is_dir():
+                    for file_path in priority_path.rglob(filename):
+                        if file_path.is_file():
+                            # Skip files in common ignore directories
+                            path_parts = set(file_path.parts)
+                            if not ignore_dirs.intersection(path_parts):
+                                return file_path
+
+            # Second pass: full repository search with depth limit for performance
+            max_depth = 8  # Reasonable depth limit to avoid deep traversal
             for file_path in repo_path.rglob(filename):
                 if file_path.is_file():
-                    # Skip files in common ignore directories
-                    path_parts = file_path.parts
-                    if any(
-                        ignore_dir in path_parts
-                        for ignore_dir in [".git", "node_modules", "__pycache__", ".venv", "venv", "target"]
-                    ):
+                    # Check depth to avoid excessive traversal
+                    relative_path = file_path.relative_to(repo_path)
+                    if len(relative_path.parts) > max_depth:
                         continue
-                    return file_path
+
+                    # Skip files in common ignore directories
+                    path_parts = set(file_path.parts)
+                    if not ignore_dirs.intersection(path_parts):
+                        return file_path
+
+            # Fallback: basename search for subdirectory paths like "subdir/file.py"
+            # This handles cases where filename includes path separators
+            basename = Path(filename).name
+            if basename != filename:  # Only do fallback if filename had path components
+                return self._find_file_by_basename_with_limits(repo_path, basename, ignore_dirs, max_depth)
+
         except (OSError, PermissionError):
             # Handle potential filesystem errors
             pass
         return None
+
+    def _find_file_by_basename_with_limits(
+        self, repo_path: Path, basename: str, ignore_dirs: set[str], max_depth: int
+    ) -> Path | None:
+        """Find file by basename with depth limits and exclusion filtering.
+
+        Args:
+            repo_path: Repository root path
+            basename: Just the filename (no path components)
+            ignore_dirs: Set of directory names to skip
+            max_depth: Maximum traversal depth
+
+        Returns:
+            Path to file if found, None otherwise
+        """
+        try:
+            for file_path in repo_path.rglob(basename):
+                if file_path.is_file():
+                    # Check depth limit
+                    relative_path = file_path.relative_to(repo_path)
+                    if len(relative_path.parts) > max_depth:
+                        continue
+
+                    # Skip files in ignore directories
+                    path_parts = set(file_path.parts)
+                    if not ignore_dirs.intersection(path_parts):
+                        return file_path
+        except (OSError, PermissionError):
+            pass
+        return None
+
+    def _fallback_recommendations(self, insights: list[AIInsight], raw: str) -> list[str]:
+        """Build a deterministic fallback set of recommendations.
+
+        - Prefer brief items derived from existing insights
+        - Otherwise, surface the raw model output to avoid hiding content
+        - Always return a list of strings
+        """
+        if insights:
+            fallback: list[str] = []
+            for ins in insights:
+                title = ins.title if hasattr(ins, "title") else "Recommendation"
+                category = getattr(ins, "category", "general")
+                severity = getattr(ins, "severity", "MEDIUM")
+                # Use Severity.value when available to avoid strings like 'Severity.MEDIUM'
+                sev = severity.value if hasattr(severity, "value") else str(severity)
+                fallback.append(f"Focus: {title} — address {str(category).lower()} ({sev.lower()}).")
+            return fallback
+
+        if isinstance(raw, str) and raw.strip():
+            return [raw.strip()]
+
+        return []

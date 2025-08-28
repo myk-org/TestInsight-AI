@@ -7,6 +7,8 @@ interface JenkinsFormProps {
   repoUrl: string;
   branch: string;
   commit: string;
+  repoMaxFiles: number;
+  repoMaxBytes: number;
   systemPrompt: string;
   onAnalysisStart: () => void;
   onAnalysisComplete: (results: AnalysisResult) => void;
@@ -26,6 +28,8 @@ const JenkinsForm: React.FC<JenkinsFormProps> = ({
   branch,
   commit,
   systemPrompt,
+  repoMaxFiles,
+  repoMaxBytes,
   onAnalysisStart,
   onAnalysisComplete,
   onAnalysisError,
@@ -41,6 +45,8 @@ const JenkinsForm: React.FC<JenkinsFormProps> = ({
   });
   const [includeRepoContext, setIncludeRepoContext] = useState(false);
   const [includeConsole, setIncludeConsole] = useState(false);
+  const [maxFilesLocal, setMaxFilesLocal] = useState<number>(repoMaxFiles || 5);
+  const [maxBytesLocal, setMaxBytesLocal] = useState<number>(repoMaxBytes || 51200);
 
   // Disable and reset includeRepoContext when repo URL is not provided
   useEffect(() => {
@@ -150,7 +156,9 @@ const JenkinsForm: React.FC<JenkinsFormProps> = ({
         url: repoUrl.trim(),
         branch: branch?.trim() || undefined,
         commit: commit?.trim() || undefined,
-        includeContext: includeRepoContext
+        includeContext: includeRepoContext,
+        maxFiles: maxFilesLocal,
+        maxBytes: maxBytesLocal
       } : undefined;
 
       // Pass includeConsole via analyzeJenkinsBuild invocation

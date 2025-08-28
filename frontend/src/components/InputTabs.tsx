@@ -26,6 +26,16 @@ const InputTabs: React.FC<InputTabsProps> = ({
   const [commit, setCommit] = useState('');
   const [systemPrompt, setSystemPrompt] = useState('');
   const [isValidUrl, setIsValidUrl] = useState(true);
+  const [repoMaxFiles, setRepoMaxFiles] = useState<number>(() => {
+    const v = localStorage.getItem('repoMaxFiles');
+    const n = v ? parseInt(v, 10) : 5;
+    return Number.isFinite(n) && n > 0 ? n : 5;
+  });
+  const [repoMaxBytes, setRepoMaxBytes] = useState<number>(() => {
+    const v = localStorage.getItem('repoMaxBytes');
+    const n = v ? parseInt(v, 10) : 51200;
+    return Number.isFinite(n) && n > 0 ? n : 51200;
+  });
 
   useEffect(() => {
     const storedRepoUrl = localStorage.getItem('repoUrl');
@@ -46,6 +56,14 @@ const InputTabs: React.FC<InputTabsProps> = ({
   useEffect(() => {
     localStorage.setItem('systemPrompt', systemPrompt);
   }, [systemPrompt]);
+
+  useEffect(() => {
+    localStorage.setItem('repoMaxFiles', String(repoMaxFiles));
+  }, [repoMaxFiles]);
+
+  useEffect(() => {
+    localStorage.setItem('repoMaxBytes', String(repoMaxBytes));
+  }, [repoMaxBytes]);
 
   const tabs = [
     {
@@ -116,6 +134,8 @@ const InputTabs: React.FC<InputTabsProps> = ({
       repoUrl,
       branch,
       commit,
+      repoMaxFiles,
+      repoMaxBytes,
       systemPrompt,
       onAnalysisStart,
       onAnalysisComplete,
@@ -258,9 +278,38 @@ const InputTabs: React.FC<InputTabsProps> = ({
             </div>
           )}
 
-          <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+          <div className="text-xs text-gray-500 dark:text-gray-400 space-y-3">
             <p>Provide GitHub repository details to get more accurate code suggestions.</p>
             <p><strong>Note:</strong> Only GitHub HTTPS URLs are supported. Branch and commit are optional.</p>
+
+            {/* Repo context limits */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="repo-max-files" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Max files to include</label>
+                <input
+                  type="number"
+                  id="repo-max-files"
+                  min={1}
+                  value={repoMaxFiles}
+                  onChange={(e) => setRepoMaxFiles(parseInt(e.target.value || '1', 10))}
+                  className="w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:focus:ring-primary-400 dark:focus:border-primary-400 border-gray-300 dark:border-gray-600"
+                />
+                <p className="mt-1">Default: 5</p>
+              </div>
+              <div>
+                <label htmlFor="repo-max-bytes" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Max bytes per file</label>
+                <input
+                  type="number"
+                  id="repo-max-bytes"
+                  min={1024}
+                  step={1024}
+                  value={repoMaxBytes}
+                  onChange={(e) => setRepoMaxBytes(parseInt(e.target.value || '1024', 10))}
+                  className="w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:focus:ring-primary-400 dark:focus:border-primary-400 border-gray-300 dark:border-gray-600"
+                />
+                <p className="mt-1">Default: 51200 (≈50 KB)</p>
+              </div>
+            </div>
 
             <details className="mt-2">
               <summary className="cursor-pointer hover:text-gray-700 dark:hover:text-gray-300">Examples</summary>

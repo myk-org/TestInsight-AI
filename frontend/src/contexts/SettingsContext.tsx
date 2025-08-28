@@ -1,5 +1,35 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 
+// Utility function to deep merge objects, treating null/undefined as missing
+const deepMerge = <T = any>(target: T, source: any): T => {
+  if (source === null || source === undefined) {
+    return target;
+  }
+
+  if (target === null || target === undefined || typeof target !== 'object' || typeof source !== 'object') {
+    return source;
+  }
+
+  const result = { ...target } as any;
+
+  for (const key in source) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      // Skip null and undefined values to preserve defaults
+      if (source[key] === null || source[key] === undefined) {
+        continue;
+      }
+
+      if (typeof source[key] === 'object' && source[key] !== null && !Array.isArray(source[key])) {
+        result[key] = deepMerge(target[key as keyof T] ?? {}, source[key]);
+      } else {
+        result[key] = source[key];
+      }
+    }
+  }
+
+  return result;
+};
+
 // Types for settings data
 export interface JenkinsSettings {
   url?: string;
@@ -75,14 +105,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
 
   // Helper function to handle API errors
   const handleApiError = (error: any): string => {
-    // Handle fetch API errors
-    if (error.response?.data?.detail) {
-      return Array.isArray(error.response.data.detail)
-        ? error.response.data.detail.map((e: any) => e.msg || e).join(', ')
-        : error.response.data.detail;
-    }
-
-    // Handle Error objects
+    // Handle Error objects first (fetch API standard)
     if (error instanceof Error) {
       return error.message;
     }
@@ -90,6 +113,13 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
     // Handle string errors
     if (typeof error === 'string') {
       return error;
+    }
+
+    // Handle structured error responses (legacy compatibility)
+    if (error.response?.data?.detail) {
+      return Array.isArray(error.response.data.detail)
+        ? error.response.data.detail.map((e: any) => e.msg || e).join(', ')
+        : error.response.data.detail;
     }
 
     // Handle objects with message property
@@ -107,24 +137,33 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
     setError(null);
 
     try {
+      const startedAt = Date.now();
       const response = await fetch(`${API_BASE_URL}/api/v1/settings`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
       });
+      const elapsed = Date.now() - startedAt;
+      console.info('SettingsContext: GET /settings completed in', elapsed, 'ms, status=', response.status);
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `HTTP ${response.status}`);
+        let detail: string | undefined;
+        try {
+          const errorData = await response.json();
+          detail = errorData?.detail;
+        } catch {}
+        throw new Error(detail || `HTTP ${response.status}`);
       }
 
       const data = await response.json();
-      setSettings(data);
+      const mergedSettings = deepMerge(defaultSettings, data);
+      setSettings(mergedSettings);
     } catch (err: any) {
       const errorMessage = handleApiError(err);
       setError(errorMessage);
-      console.error('Failed to fetch settings:', err);
+      console.error('SettingsContext: Failed to fetch settings:', err);
     } finally {
       setLoading(false);
     }
@@ -141,6 +180,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify(update),
       });
 
@@ -150,7 +190,8 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
       }
 
       const data = await response.json();
-      setSettings(data);
+      const mergedSettings = deepMerge(defaultSettings, data);
+      setSettings(mergedSettings);
     } catch (err: any) {
       const errorMessage = handleApiError(err);
       setError(errorMessage);
@@ -172,6 +213,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
       });
 
       if (!response.ok) {
@@ -180,7 +222,8 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
       }
 
       const data = await response.json();
-      setSettings(data);
+      const mergedSettings = deepMerge(defaultSettings, data);
+      setSettings(mergedSettings);
     } catch (err: any) {
       const errorMessage = handleApiError(err);
       setError(errorMessage);
@@ -199,6 +242,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
       });
 
       if (!response.ok) {
@@ -221,6 +265,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
       });
 
       if (!response.ok) {
@@ -246,8 +291,9 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
       const response = await fetch(`${API_BASE_URL}/api/v1/settings/backup`, {
         method: 'GET',
         headers: {
-          'Accept': 'application/json',
+          'Accept': 'application/octet-stream',
         },
+        credentials: 'include',
       });
 
       if (!response.ok) {
@@ -260,9 +306,18 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
       let filename = 'testinsight_settings_backup.json';
 
       if (contentDisposition) {
-        const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
-        if (filenameMatch) {
-          filename = filenameMatch[1];
+        // Try RFC 5987 filename* first (supports UTF-8)
+        const filenameStarMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)/);
+        if (filenameStarMatch) {
+          // Decode URI component for UTF-8 filename
+          filename = decodeURIComponent(filenameStarMatch[1]).replace(/[\/\\:*?"<>|]/g, '_');
+        } else {
+          // Fallback to standard filename parameter
+          const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+          if (filenameMatch) {
+            // Sanitize filename to remove path separators and dangerous characters
+            filename = filenameMatch[1].replace(/[\/\\:*?"<>|]/g, '_');
+          }
         }
       }
 
@@ -294,6 +349,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
 
       const response = await fetch(`${API_BASE_URL}/api/v1/settings/restore`, {
         method: 'POST',
+        credentials: 'include',
         body: formData,
       });
 
@@ -303,7 +359,8 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
       }
 
       const data = await response.json();
-      setSettings(data);
+      const mergedSettings = deepMerge(defaultSettings, data);
+      setSettings(mergedSettings);
     } catch (err: any) {
       const errorMessage = handleApiError(err);
       setError(errorMessage);

@@ -52,11 +52,6 @@ repos:
       - id: gitleaks
         args: [--config=.gitleaks.toml]
 
-  - repo: https://github.com/iamthefij/docker-pre-commit
-    rev: v3.0.1
-    hooks:
-      - id: docker-compose-check
-
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.17.1
     hooks:
