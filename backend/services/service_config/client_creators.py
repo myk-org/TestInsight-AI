@@ -40,10 +40,10 @@ class ServiceClientCreators(BaseServiceConfig):
         getters = ServiceConfigGetters()
         config = getters.get_jenkins_config()
 
-        final_url = url or config["url"]
-        final_username = username or config["username"]
-        final_password = password or config["password"]
-        final_verify_ssl = verify_ssl if verify_ssl is not None else config["verify_ssl"]
+        final_url = url if url is not None else config.get("url")
+        final_username = username if username is not None else config.get("username")
+        final_password = password if password is not None else config.get("password")
+        final_verify_ssl = verify_ssl if verify_ssl is not None else config.get("verify_ssl")
 
         if not isinstance(final_url, str) or not isinstance(final_username, str) or not isinstance(final_password, str):
             raise ValueError("Jenkins configuration contains invalid types")
@@ -77,7 +77,7 @@ class ServiceClientCreators(BaseServiceConfig):
         getters = ServiceConfigGetters()
         config = getters.get_ai_config()
 
-        final_api_key = api_key if api_key is not None else config["api_key"]
+        final_api_key = api_key if api_key is not None else config.get("api_key")
 
         if not isinstance(final_api_key, str):
             raise TypeError("API key must be a string.")
@@ -130,13 +130,16 @@ class ServiceClientCreators(BaseServiceConfig):
             ValueError: If repo_url is not provided
             GitRepositoryError: If cloning fails
         """
-        if not repo_url:
+        if not repo_url or not str(repo_url).strip():
             raise ValueError("repo_url is required for GitClient")
 
         # Allow only https://, ssh:// or scp-like git URLs (user@host:path)
+        repo_url = repo_url.strip()
         p = urlparse(repo_url)
-        is_http_ssh = bool(p.scheme in ("https", "ssh") and p.netloc)
-        is_scp_like = re.match(r"^[^@\s]+@[^:\s]+:.+$", repo_url) is not None
+        path_non_empty = bool(p.path and p.path.strip("/"))
+        is_http_ssh = bool(p.scheme in ("https", "ssh") and p.netloc and path_non_empty)
+        # Disallow whitespace anywhere and require non-empty path after colon
+        is_scp_like = re.fullmatch(r"[^\s@]+@[^\s:]+:[^\s]+", repo_url) is not None
         if not (is_http_ssh or is_scp_like):
             raise ValueError("Invalid repository URL; only https://, ssh://, or scp-like formats allowed.")
 
@@ -144,6 +147,6 @@ class ServiceClientCreators(BaseServiceConfig):
         getters = ServiceConfigGetters()
         config = getters.get_github_config()
 
-        final_token = github_token or config["token"]
+        final_token = github_token if github_token is not None else config.get("token")
 
         return GitClient(repo_url=repo_url, branch=branch, commit=commit, github_token=final_token)
