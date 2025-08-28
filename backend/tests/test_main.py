@@ -125,6 +125,15 @@ class TestCORSConfiguration:
         assert parse_boolean_env("", False) is False
         assert parse_boolean_env("", True) is True
 
+    def test_parse_boolean_env_none_input(self):
+        """Test None input with default values to lock behavior."""
+        # Test with explicit default False
+        assert parse_boolean_env(None, False) is False
+        # Test with explicit default True
+        assert parse_boolean_env(None, True) is True
+        # Test with implicit default (should be False)
+        assert parse_boolean_env(None) is False
+
     def test_https_localhost_defaults_included(self):
         """Test that default origins include HTTPS localhost variants."""
         # Test the default origins string directly
@@ -172,3 +181,49 @@ class TestCORSConfiguration:
                 middleware_kwargs = cors_middleware.kwargs
                 assert middleware_kwargs["allow_credentials"] is False
                 assert middleware_kwargs["allow_origins"] == ["*"]
+
+    def test_normalize_cors_origins_mixed_wildcard_shortcircuit(self):
+        """Test that wildcard mixed with explicit origins short-circuits to wildcard only."""
+        # Test wildcard at the beginning
+        origins_with_wildcard_first = "*,http://localhost:3000,https://example.com"
+        result = normalize_cors_origins(origins_with_wildcard_first)
+        assert result == ["*"]
+
+        # Test wildcard in the middle
+        origins_with_wildcard_middle = "http://localhost:3000,*,https://example.com"
+        result = normalize_cors_origins(origins_with_wildcard_middle)
+        assert result == ["*"]
+
+        # Test wildcard at the end
+        origins_with_wildcard_end = "http://localhost:3000,https://example.com,*"
+        result = normalize_cors_origins(origins_with_wildcard_end)
+        assert result == ["*"]
+
+    def test_cors_middleware_idempotency(self):
+        """Test that calling setup_cors_middleware twice results in single CORSMiddleware."""
+        from backend.main import setup_cors_middleware
+        from fastapi import FastAPI
+        from fastapi.middleware.cors import CORSMiddleware
+
+        # Create test app
+        test_app = FastAPI()
+
+        # Call setup_cors_middleware twice
+        with patch.dict(
+            os.environ, {"CORS_ALLOWED_ORIGINS": "http://localhost:3000", "CORS_ALLOW_CREDENTIALS": "true"}, clear=False
+        ):
+            setup_cors_middleware(test_app)
+            initial_middleware_count = len(test_app.user_middleware)
+
+            # Call it again
+            setup_cors_middleware(test_app)
+            final_middleware_count = len(test_app.user_middleware)
+
+            # Should still have the same number of middleware (old one removed, new one added)
+            assert initial_middleware_count == final_middleware_count
+
+            # Should have exactly one CORSMiddleware
+            cors_middleware_count = sum(
+                1 for middleware in test_app.user_middleware if middleware.cls == CORSMiddleware
+            )
+            assert cors_middleware_count == 1

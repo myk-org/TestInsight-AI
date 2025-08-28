@@ -19,9 +19,6 @@ from backend.api.main import router
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan handler."""
-    # Load environment variables
-    load_dotenv()
-
     # Configure logging
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
     logging.basicConfig(level=getattr(logging, log_level, logging.INFO))
@@ -106,12 +103,15 @@ def parse_boolean_env(env_value: str | None, default: bool = False) -> bool:
     if not cleaned_value:
         return default
 
+    # Normalize to lowercase once to avoid repeated .lower() calls
+    normalized_value = cleaned_value.lower()
+
     # Support various truthy values: true, yes, 1, on
-    if cleaned_value.lower() in ("true", "yes", "1", "on"):
+    if normalized_value in ("true", "yes", "1", "on"):
         return True
 
     # Support various falsy values: false, no, 0, off
-    if cleaned_value.lower() in ("false", "no", "0", "off"):
+    if normalized_value in ("false", "no", "0", "off"):
         return False
 
     # Return default for unrecognized tokens
@@ -122,6 +122,7 @@ def setup_cors_middleware(app: FastAPI) -> None:
     """
     Configure CORS middleware with proper security checks.
     Called during lifespan startup after environment is loaded.
+    Idempotent - removes existing CORSMiddleware before adding new one.
     """
     # Default to localhost origins for development (including HTTPS) to support credentials
     default_origins = "http://localhost:3000,http://127.0.0.1:3000,https://localhost:3000,https://127.0.0.1:3000"
@@ -137,6 +138,9 @@ def setup_cors_middleware(app: FastAPI) -> None:
             "CORS credentials disabled due to wildcard origin (*). Specify explicit origins to enable credentials."
         )
         allow_credentials = False
+
+    # Remove existing CORSMiddleware to make this function idempotent
+    app.user_middleware = [middleware for middleware in app.user_middleware if middleware.cls != CORSMiddleware]
 
     # Register CORS middleware
     app.add_middleware(

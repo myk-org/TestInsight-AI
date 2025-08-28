@@ -12,22 +12,79 @@ from backend.services.service_config.client_creators import ServiceClientCreator
 router = APIRouter(prefix="/analyze", tags=["analysis"])
 logger = logging.getLogger("testinsight")
 
+# Maximum payload size to protect model and server (5MB)
+MAX_COMBINED_TEXT_SIZE = 5 * 1024 * 1024  # 5MB in bytes
+
+
+def _redact_text(text: str | None) -> str | None:
+    """Redact sensitive information from text for safe logging.
+
+    Handles multiple URL patterns:
+    - https://token@github.com/user/repo.git -> https://***@github.com/user/repo.git
+    - https://user:token@github.com/user/repo -> https://***:***@github.com/user/repo # pragma: allowlist secret
+    - ssh://user@host/repo -> ssh://***@host/repo
+    - git@github.com:user/repo.git -> ***@github.com:user/repo.git
+
+    Args:
+        text: Text to redact (can be None or non-string)
+
+    Returns:
+        Redacted text or original value if non-string/None/exception
+    """
+    if not text or not isinstance(text, str):
+        return text
+    try:
+        # Replace http(s) auth patterns: preserve protocol, replace user:pass@ with ***:***@ or user@ with ***@
+        redacted = re.sub(r"(https?)://[^/@:]+:[^/@]*@", r"\1://***:***@", text)
+        redacted = re.sub(r"(https?)://[^/@:]+@", r"\1://***@", redacted)
+        # Replace ssh://user@ patterns
+        redacted = re.sub(r"ssh://[^/@:]+@", "ssh://***@", redacted)
+        # Replace scp-like patterns: user@host: (like git@github.com:)
+        redacted = re.sub(r"[^/@:]+@([^/@:]+):", r"***@\1:", redacted)
+        return redacted
+    except Exception:
+        return text
+
 
 def _redact_repo_url(url: str | None) -> str | None:
     """Redact embedded credentials/tokens from a repository URL for safe logging.
 
-    Examples:
-    - https://token@github.com/user/repo.git -> https://***@github.com/user/repo.git
-    - https://user:token@github.com/user/repo -> https://***:***@github.com/user/repo # pragma: allowlist secret
-    - http(s) basic auth patterns are replaced, leaving host/path intact.
+    This is a convenience wrapper around _redact_text for backwards compatibility.
     """
-    if not url or not isinstance(url, str):
-        return url
+    return _redact_text(url)
+
+
+def _truncate_text_safely(text: str, max_size: int = MAX_COMBINED_TEXT_SIZE) -> tuple[str, bool]:
+    """Truncate text to maximum size with note if truncated.
+
+    Args:
+        text: Text to potentially truncate
+        max_size: Maximum size in bytes
+
+    Returns:
+        Tuple of (potentially truncated text, was_truncated)
+    """
+    text_bytes = text.encode("utf-8")
+    if len(text_bytes) <= max_size:
+        return text, False
+
+    # Truncate to approximately max_size, ensuring we don't break UTF-8 encoding
+    truncated_bytes = text_bytes[:max_size]
     try:
-        # Replace user or user:pass before '@'
-        return re.sub(r"https?://[^/@:]+(?::[^/@]*)?@", "https://***@", url)
-    except Exception:
-        return url
+        truncated_text = truncated_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        # Find the last complete UTF-8 sequence
+        while len(truncated_bytes) > 0:
+            try:
+                truncated_text = truncated_bytes.decode("utf-8")
+                break
+            except UnicodeDecodeError:
+                truncated_bytes = truncated_bytes[:-1]
+        else:
+            truncated_text = ""
+
+    truncation_note = f"\n\n[NOTE: Text was truncated to {max_size // (1024 * 1024)}MB due to size limits]"
+    return truncated_text + truncation_note, True
 
 
 @router.post("", response_model=AnalysisResponse)
@@ -48,6 +105,11 @@ async def analyze(
         # Early validation to avoid long-running work on empty input
         if not text or not text.strip():
             raise HTTPException(status_code=422, detail="Text content is empty; no analyzable content")
+
+        # Truncate text if too large to protect model and server
+        text, was_truncated = _truncate_text_safely(text)
+        if was_truncated:
+            logger.warning("Input text was truncated due to size limits for analysis")
         # Basic input validation and sensible upper bounds for repository limits
         if repo_max_files is not None and (repo_max_files < 1 or repo_max_files > 500):
             raise HTTPException(status_code=422, detail="repo_max_files must be between 1 and 500")
@@ -76,7 +138,12 @@ async def analyze(
                 cloned_repo_path = str(git_client.repo_path)
             except Exception as e:
                 # Fallback: continue without repository context if cloning fails
-                warning_note = f"Repository cloning failed: {str(e)}. Proceeding without repository context."
+                warning_note = "Repository cloning failed; proceeding without repository context."
+                logger.warning(
+                    "Repository cloning failed for url=%s: %s",
+                    _redact_repo_url(repository_url),
+                    type(e).__name__,
+                )
             else:
                 logger.info(
                     "Analyze(text): repo cloned ok url=%s branch=%s commit=%s path=%s",
@@ -87,9 +154,12 @@ async def analyze(
                 )
 
         # Create request with repository information
+        # Redact repo URL in user-supplied context to prevent credential leakage to LLM
+        safe_custom_context = _redact_text(custom_context) if custom_context else custom_context
+
         request = AnalysisRequest(
             text=text,
-            custom_context=custom_context,
+            custom_context=safe_custom_context,
             system_prompt=system_prompt,
             repository_url=repository_url,
             repository_branch=repository_branch,
@@ -99,11 +169,9 @@ async def analyze(
             repo_max_bytes=repo_max_bytes,
         )
 
-        # Add cloned path and repo limits to request object for AI analyzer
+        # Add cloned path to request object for AI analyzer
         if cloned_repo_path:
             request.cloned_repo_path = cloned_repo_path
-        request.repo_max_files = repo_max_files
-        request.repo_max_bytes = repo_max_bytes
 
         analysis = ai_analyzer.analyze_test_results(request)
         logger.info(
@@ -113,7 +181,7 @@ async def analyze(
             len(analysis.summary or ""),
         )
 
-        summary_text = analysis.summary
+        summary_text = analysis.summary or ""
         if warning_note:
             summary_text = f"Note: {warning_note}\n\n{summary_text}"
 
@@ -219,12 +287,19 @@ async def analyze_file(
         if not has_non_empty_content:
             raise HTTPException(status_code=500, detail="Uploaded files contain no analyzable content")
 
+        # Truncate combined text if too large to protect model and server
+        combined_text, was_truncated = _truncate_text_safely(combined_text)
+        if was_truncated:
+            logger.warning("Combined file content was truncated due to size limits for analysis")
+
         # Build context from repository and custom context
         context_parts = []
         if repo_url:
-            context_parts.append(f"Repository: {repo_url}")
+            context_parts.append(f"Repository: {_redact_repo_url(repo_url)}")
         if custom_context:
-            context_parts.append(custom_context)
+            redacted_context = _redact_text(custom_context)
+            if redacted_context:  # Only append if not None
+                context_parts.append(redacted_context)
 
         final_context = "; ".join(context_parts) if context_parts else None
 
@@ -240,7 +315,12 @@ async def analyze_file(
                 cloned_repo_path = str(git_client.repo_path)
             except Exception as e:
                 # Fallback: continue without repository context if cloning fails
-                warning_note = f"Repository cloning failed: {str(e)}. Proceeding without repository context."
+                warning_note = "Repository cloning failed; proceeding without repository context."
+                logger.warning(
+                    "Repository cloning failed for url=%s: %s",
+                    _redact_repo_url(repo_url),
+                    type(e).__name__,
+                )
             else:
                 logger.info(
                     "Analyze(file): repo cloned ok url=%s branch=%s commit=%s path=%s",
@@ -268,11 +348,9 @@ async def analyze_file(
             repo_max_bytes=repo_max_bytes,
         )
 
-        # Add cloned path and repo limits to request object for AI analyzer
+        # Add cloned path to request object for AI analyzer
         if cloned_repo_path:
             request.cloned_repo_path = cloned_repo_path
-        request.repo_max_files = repo_max_files
-        request.repo_max_bytes = repo_max_bytes
         analysis = ai_analyzer.analyze_test_results(request)
         logger.info(
             "Analyze(file): results insights=%d recommendations=%d summary_len=%d",
@@ -281,7 +359,7 @@ async def analyze_file(
             len(analysis.summary or ""),
         )
 
-        summary_text = analysis.summary
+        summary_text = analysis.summary or ""
         if warning_note:
             summary_text = f"Note: {warning_note}\n\n{summary_text}"
 
@@ -403,6 +481,12 @@ async def analyze_jenkins_build(
         if include_console and console_output:
             combined_text = f"{combined_text}\n\n=== Jenkins Console Output (Job: {job_name}, Build: {final_build_number}) ===\n{console_output}"
 
+        # Truncate combined text if too large to protect model and server
+        if combined_text:
+            combined_text, was_truncated = _truncate_text_safely(combined_text)
+            if was_truncated:
+                logger.warning("Jenkins analysis content was truncated due to size limits")
+
         # If both test report and console output are unavailable, return 404
         if not combined_text.strip():
             # Provide actionable hint when console analysis is not enabled
@@ -419,7 +503,7 @@ async def analyze_jenkins_build(
         # Build context
         context_parts = [f"Jenkins job: {job_name}", f"Build: {final_build_number}"]
         if repo_url:
-            context_parts.append(f"Repository: {repo_url}")
+            context_parts.append(f"Repository: {_redact_repo_url(repo_url)}")
         final_context = "; ".join(context_parts)
 
         # Clone repository if requested
@@ -433,7 +517,12 @@ async def analyze_jenkins_build(
                 cloned_repo_path = str(git_client.repo_path)
             except Exception as e:
                 # Fallback: continue without repository context if cloning fails
-                warning_note = f"Repository cloning failed: {str(e)}. Proceeding without repository context."
+                warning_note = "Repository cloning failed; proceeding without repository context."
+                logger.warning(
+                    "Repository cloning failed for url=%s: %s",
+                    _redact_repo_url(repo_url),
+                    type(e).__name__,
+                )
             else:
                 logger.info(
                     "Analyze(jenkins): repo cloned ok url=%s branch=%s commit=%s path=%s",
@@ -461,11 +550,9 @@ async def analyze_jenkins_build(
             repo_max_bytes=repo_max_bytes,
         )
 
-        # Add cloned path and repo limits to request object for AI analyzer
+        # Add cloned path to request object for AI analyzer
         if cloned_repo_path:
             request.cloned_repo_path = cloned_repo_path
-        request.repo_max_files = repo_max_files
-        request.repo_max_bytes = repo_max_bytes
         analysis = ai_analyzer.analyze_test_results(request)
         logger.info(
             "Analyze(jenkins): results insights=%d recommendations=%d summary_len=%d",
@@ -474,7 +561,7 @@ async def analyze_jenkins_build(
             len(analysis.summary or ""),
         )
 
-        summary_text = analysis.summary
+        summary_text = analysis.summary or ""
         if warning_note:
             summary_text = f"Note: {warning_note}\n\n{summary_text}"
 
