@@ -176,23 +176,22 @@ def _truncate_text_safely(text: str, max_size: int = MAX_COMBINED_TEXT_SIZE) -> 
 
 
 def _log_exception_safely(logger: logging.Logger, message: str, exception: Exception) -> None:
-    """Log exception with sanitized traceback to prevent information leakage.
-
-    Args:
-        logger: Logger instance to use
-        message: Base error message
-        exception: Original exception to log
-    """
-
-    # Create new exception with redacted message
-    sanitized_exception = type(exception)(_redact_text(str(exception)))
-
-    # Build exc_info tuple with original traceback but sanitized exception
-    exc_info = (type(exception), sanitized_exception, exception.__traceback__)
-
-    # Log at error level with the sanitized exc_info
-    logger.error(message, exc_info=exc_info)
-
+    """Log exception with sanitized traceback; never raise from logger."""
+    sanitized_msg = _redact_text(str(exception))
+    try:
+        exc_type = type(exception)
+        try:
+            # Try to instantiate the same exception type with the redacted message
+            exc_value = exc_type(sanitized_msg) if sanitized_msg is not None else exc_type()
+        except Exception:
+            # Fallback to a generic Exception if the original constructor signature differs
+            exc_value = Exception(sanitized_msg or "")
+        # Log at error level with the sanitized exc_info
+        logger.error("%s: %s", message, sanitized_msg,
+                     exc_info=(exc_type, exc_value, exception.__traceback__))
+    except Exception:
+        # If logging itself fails, still emit something safe
+        logger.error("%s: %s", message, sanitized_msg)
 
 @router.post("", response_model=AnalysisResponse)
 async def analyze(
