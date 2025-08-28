@@ -225,6 +225,36 @@ class TestServiceConfig:
             with pytest.raises(ValueError, match="AI service is not configured"):
                 service_client_creators.create_configured_ai_client()
 
+    def test_create_configured_ai_client_api_key_trimmed(self, service_client_creators):
+        """Test API key trimming functionality."""
+        with (
+            patch("backend.services.service_config.client_creators.GeminiClient") as mock_gemini_class,
+            patch("backend.services.service_config.client_creators.AIAnalyzer") as mock_analyzer_class,
+        ):
+            mock_gemini = Mock()
+            mock_gemini_class.return_value = mock_gemini
+            mock_analyzer = Mock()
+            mock_analyzer_class.return_value = mock_analyzer
+
+            client = service_client_creators.create_configured_ai_client(api_key="  key-123  ")
+
+            mock_gemini_class.assert_called_once()
+            assert mock_gemini_class.call_args.kwargs["api_key"] == "key-123"
+            assert client == mock_analyzer
+
+    def test_create_configured_ai_client_api_key_wrong_type_raises(self):
+        """Test that non-string API key types are rejected."""
+        with patch("backend.services.service_config.client_creators.ServiceConfigGetters") as mock_getters_class:
+            # Mock the config getter to return a non-string API key
+            mock_getters = Mock()
+            mock_getters.get_ai_config.return_value = {"api_key": 123}  # Non-string type bypassing Pydantic
+            mock_getters_class.return_value = mock_getters
+
+            creators = ServiceClientCreators()
+
+            with pytest.raises(ValueError, match="API key must be a string"):
+                creators.create_configured_ai_client()
+
     def test_create_configured_git_client_with_settings(self, service_client_creators):
         """Test creating Git client using settings."""
         with patch("backend.services.service_config.client_creators.GitClient") as mock_git_class:

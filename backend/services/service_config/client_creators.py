@@ -81,11 +81,10 @@ class ServiceClientCreators(BaseServiceConfig):
         config = getters.get_ai_config()
 
         final_api_key = api_key if api_key is not None else config.get("api_key")
-
         if not isinstance(final_api_key, str):
-            raise TypeError("API key must be a string.")
-
-        if not final_api_key or not final_api_key.strip():
+            raise ValueError("API key must be a string.")
+        final_api_key = final_api_key.strip()
+        if not final_api_key:
             raise ValueError(
                 "AI service is not configured. Please provide a Gemini API key in settings or as parameter."
             )
@@ -96,13 +95,18 @@ class ServiceClientCreators(BaseServiceConfig):
         max_tokens = config.get("max_tokens")
 
         default_model = model if isinstance(model, str) and model else "gemini-2.5-pro"
-        # Tolerate numeric strings from forms
+        # Tolerate numeric strings from forms and clamp to safe ranges
         try:
-            default_temperature = float(temperature) if temperature is not None else 0.7
+            parsed_temperature = float(temperature) if temperature is not None else 0.7
+            # Clamp temperature to valid range [0.0, 1.0] to prevent model instability
+            default_temperature = max(0.0, min(1.0, parsed_temperature))
         except (TypeError, ValueError):
             default_temperature = 0.7
+
         try:
-            default_max_tokens = int(max_tokens) if max_tokens is not None else 4096
+            parsed_max_tokens = int(max_tokens) if max_tokens is not None else 4096
+            # Clamp max_tokens to reasonable range [1, 32768] to prevent excessive costs/timeouts
+            default_max_tokens = max(1, min(32768, parsed_max_tokens))
         except (TypeError, ValueError):
             default_max_tokens = 4096
 
