@@ -913,54 +913,106 @@ class AIAnalyzer:
 
         return files
 
+    def _normalize_repo_search_patterns(self, filename: str) -> list[str]:
+        """Return safe, relative patterns to search for within a repo.
+
+        - Collapses absolute or drive-letter paths to basename
+        - Converts backslashes to forward slashes
+        - Strips leading ./ and ../ segments
+        - Returns [subpath, basename] when a relative subpath is present; otherwise [basename]
+        """
+        s = str(filename or "").strip()
+        if not s:
+            return []
+
+        s = s.replace("\\", "/")
+
+        # Collapse absolute or drive-letter paths to basename
+        if s.startswith("/") or re.match(r"^[A-Za-z]:/", s):
+            return [Path(s).name]
+
+        # Strip leading ./ and ../ segments
+        while s.startswith("./"):
+            s = s[2:]
+        while s.startswith("../"):
+            s = s[3:]
+
+        base = Path(s).name
+        return [s, base] if base != s else [base]
+
     def _find_file_in_repo(self, repo_path: Path, filename: str) -> Path | None:
         """Find file in repository by name with optimized search and basename fallback.
 
-        Args:
-            repo_path: Path to repository root
-            filename: Name of file to find (may include subdirectory like "subdir/file.py")
-
-        Returns:
-            Path to file if found, None otherwise
+        Handles absolute and Windows-style paths safely by normalizing to relative patterns before using rglob().
         """
         try:
-            # Priority search in common root directories first for performance
+            # Build safe patterns to search
+            patterns = self._normalize_repo_search_patterns(filename)
+            if not patterns:
+                return None
+
             priority_roots = ["tests", "src", "backend", "frontend", "test", "lib", "pkg"]
-            ignore_dirs = {".git", "node_modules", "__pycache__", ".venv", "venv", "target", ".tox", "build", "dist"}
+            ignore_dirs: set[str] = {
+                ".git",
+                "node_modules",
+                "__pycache__",
+                ".venv",
+                "venv",
+                "target",
+                ".tox",
+                "build",
+                "dist",
+            }
+
+            repo_root = repo_path.resolve()
+
+            # Try direct relative path (first pattern may be a subpath)
+            for pat in patterns:
+                if "/" in pat:
+                    try:
+                        direct = (repo_path / pat).resolve()
+                        direct.relative_to(repo_root)  # Ensure path stays within repo
+                        if direct.exists() and direct.is_file():
+                            return direct
+                    except Exception:
+                        pass
 
             # First pass: search in priority directories
             for root in priority_roots:
                 priority_path = repo_path / root
                 if priority_path.exists() and priority_path.is_dir():
-                    for file_path in priority_path.rglob(filename):
+                    for pat in patterns:
+                        try:
+                            for file_path in priority_path.rglob(pat):
+                                if file_path.is_file():
+                                    path_parts = set(file_path.parts)
+                                    if not ignore_dirs.intersection(path_parts):
+                                        return file_path
+                        except NotImplementedError:
+                            # Skip invalid patterns defensively
+                            continue
+
+            # Second pass: full repository search with depth limit for performance
+            max_depth = 8
+            for pat in patterns:
+                try:
+                    for file_path in repo_path.rglob(pat):
                         if file_path.is_file():
-                            # Skip files in common ignore directories
+                            relative_path = file_path.relative_to(repo_path)
+                            if len(relative_path.parts) > max_depth:
+                                continue
                             path_parts = set(file_path.parts)
                             if not ignore_dirs.intersection(path_parts):
                                 return file_path
+                except NotImplementedError:
+                    continue
 
-            # Second pass: full repository search with depth limit for performance
-            max_depth = 8  # Reasonable depth limit to avoid deep traversal
-            for file_path in repo_path.rglob(filename):
-                if file_path.is_file():
-                    # Check depth to avoid excessive traversal
-                    relative_path = file_path.relative_to(repo_path)
-                    if len(relative_path.parts) > max_depth:
-                        continue
-
-                    # Skip files in common ignore directories
-                    path_parts = set(file_path.parts)
-                    if not ignore_dirs.intersection(path_parts):
-                        return file_path
-
-            # Fallback: basename search for subdirectory paths like "subdir/file.py"
-            # This handles cases where filename includes path separators
-            basename = Path(filename).name
-            if basename != filename:  # Only do fallback if filename had path components
-                return self._find_file_by_basename_with_limits(repo_path, basename, ignore_dirs, max_depth)
+            # Fallback: strict basename search with limits
+            basename = Path(patterns[-1]).name
+            if basename:
+                return self._find_file_by_basename_with_limits(repo_path, basename, ignore_dirs, max_depth=8)
 
         except (OSError, PermissionError):
-            # Handle potential filesystem errors
             pass
         return None
 
