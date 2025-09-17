@@ -90,13 +90,16 @@ class SettingsService:
         update_data: dict[str, Any] = {}
 
         if update.jenkins is not None:
-            update_data["jenkins"] = update.jenkins.model_dump()
+            # Exclude None so we don't overwrite existing values unintentionally
+            update_data["jenkins"] = update.jenkins.model_dump(exclude_none=True)
 
         if update.github is not None:
-            update_data["github"] = update.github.model_dump()
+            # Exclude None so we don't overwrite existing values unintentionally
+            update_data["github"] = update.github.model_dump(exclude_none=True)
 
         if update.ai is not None:
-            update_data["ai"] = update.ai.model_dump()
+            # Exclude None so we don't overwrite existing values unintentionally
+            update_data["ai"] = update.ai.model_dump(exclude_none=True)
 
         # Add timestamp
         update_data["last_updated"] = datetime.now()

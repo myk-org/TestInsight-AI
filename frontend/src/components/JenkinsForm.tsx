@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AnalysisResult } from '../App';
-import { analyzeJenkinsBuild, fetchJenkinsJobs as apiFetchJenkinsJobs } from '../services/api';
+import { analyzeJenkinsBuild, fetchJenkinsJobs as apiFetchJenkinsJobs, getSecretsStatus } from '../services/api';
 import { useSettings } from '../contexts/SettingsContext';
 
 interface JenkinsFormProps {
@@ -47,6 +47,8 @@ const JenkinsForm: React.FC<JenkinsFormProps> = ({
   const [includeConsole, setIncludeConsole] = useState(false);
   const [maxFilesLocal, setMaxFilesLocal] = useState<number>(repoMaxFiles || 5);
   const [maxBytesLocal, setMaxBytesLocal] = useState<number>(repoMaxBytes || 51200);
+  const [hasJenkinsSecret, setHasJenkinsSecret] = useState<boolean>(false);
+  const [secretsLoading, setSecretsLoading] = useState<boolean>(false);
 
   // Disable and reset includeRepoContext when repo URL is not provided
   useEffect(() => {
@@ -57,16 +59,32 @@ const JenkinsForm: React.FC<JenkinsFormProps> = ({
     }
   }, [repoUrl, includeRepoContext]);
 
-  // Populate form with saved settings
+  // Populate form with saved settings (do not echo secrets)
   useEffect(() => {
     if (settings) {
       setConfig(prev => ({
         ...prev,
         url: settings.jenkins.url || '',
         username: settings.jenkins.username || '',
-        apiToken: settings.jenkins.api_token || '',
+        apiToken: '',
       }));
     }
+  }, [settings]);
+
+  // Fetch secrets status to determine if Jenkins token is configured server-side
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        setSecretsLoading(true);
+        const status = await getSecretsStatus();
+        setHasJenkinsSecret(Boolean(status?.jenkins?.api_token));
+      } catch {
+        setHasJenkinsSecret(false);
+      } finally {
+        setSecretsLoading(false);
+      }
+    };
+    fetchStatus();
   }, [settings]);
 
   const [jobsList, setJobsList] = useState<string[]>([]);
@@ -84,7 +102,7 @@ const JenkinsForm: React.FC<JenkinsFormProps> = ({
 
   const fetchJenkinsJobs = async () => {
     // Check if Jenkins is configured in settings
-    if (!settings?.jenkins?.url || !settings?.jenkins?.username || !settings?.jenkins?.api_token) {
+    if (!settings?.jenkins?.url || !settings?.jenkins?.username || !hasJenkinsSecret) {
       onAnalysisError('Please configure Jenkins connection in Settings first');
       return;
     }
@@ -131,7 +149,7 @@ const JenkinsForm: React.FC<JenkinsFormProps> = ({
 
   const handleAnalyze = async () => {
     // Check if Jenkins is configured in settings
-    if (!settings?.jenkins?.url || !settings?.jenkins?.username || !settings?.jenkins?.api_token) {
+    if (!settings?.jenkins?.url || !settings?.jenkins?.username || !hasJenkinsSecret) {
       onAnalysisError('Please configure Jenkins connection in Settings first');
       return;
     }
@@ -145,9 +163,10 @@ const JenkinsForm: React.FC<JenkinsFormProps> = ({
       onAnalysisStart();
       // Use settings for Jenkins config instead of form data
       const jenkinsConfig = {
-        url: settings.jenkins.url,
-        username: settings.jenkins.username,
-        apiToken: settings.jenkins.api_token,
+        url: settings.jenkins.url || '',
+        username: settings.jenkins.username || '',
+        // Do not echo secrets; backend uses saved secret. Keep type as string.
+        apiToken: '',
         jobName: config.jobName,
         buildNumber: config.buildNumber,
       };
@@ -174,12 +193,12 @@ const JenkinsForm: React.FC<JenkinsFormProps> = ({
     }
   };
 
-  const isFormValid = settings?.jenkins?.url && settings?.jenkins?.username && settings?.jenkins?.api_token && config.jobName;
+  const isFormValid = Boolean(settings?.jenkins?.url && settings?.jenkins?.username && hasJenkinsSecret && config.jobName);
 
   return (
     <div className="space-y-6">
       {/* Jenkins Status */}
-      {settings?.jenkins?.url ? (
+      {settings?.jenkins?.url && settings?.jenkins?.username && hasJenkinsSecret ? (
         <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-md p-4">
           <div className="flex items-center justify-between">
             <div className="flex">
@@ -229,6 +248,7 @@ const JenkinsForm: React.FC<JenkinsFormProps> = ({
               <p className="mt-1 text-sm text-blue-700 dark:text-blue-300">
                 Please configure your Jenkins connection in the Settings page before analyzing builds.
                 Go to Settings → Jenkins to set up your server URL, username, and API token.
+                {secretsLoading ? '' : (!hasJenkinsSecret ? ' (API token missing)' : (!settings?.jenkins?.username ? ' (Username missing)' : (!settings?.jenkins?.url ? ' (URL missing)' : '')))}
               </p>
             </div>
           </div>
